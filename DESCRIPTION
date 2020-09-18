@@ -1,0 +1,10 @@
+Package: gcCAGE
+Type: Package
+Title: Analysis of PGC dataset
+Version: 0.1.0
+Author: Fabio M D'Orazio
+Maintainer: Fabio M D'Orazio <fabiomarco.dorazio@gmail.com>
+Description: Compile functions for analysis of PGC dataset
+License: What license is it under?
+Encoding: UTF-8
+LazyData: true
