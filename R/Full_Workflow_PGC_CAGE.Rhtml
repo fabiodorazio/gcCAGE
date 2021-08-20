@@ -1,0 +1,2479 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<title>CAGE analysis for zebrafish PGCs</title>
+</head>
+
+<body>
+
+<h1>Code for CAGE analysis</h1>
+
+<p>This is a pipeline to analyse SLIC CAGE data generated from zebrafish Primordial Germ Cells and somatic cells. The dataset includes:</p>
+
+<p> - PGC at high stage </p>
+<p> - somatic at high stage </p>
+<p> - PGC at prim5 stage </p>
+<p> - somatic at prim5 stage </p>
+
+<head><b> Mapping </b></head>
+<p style="color:blue">## mapping was done using bowtie2 </p>
+<p style="font-family:courier">bowtie2 --phred33-quals --threads $nCores -x</p>
+<p style="color:blue">##sam file was sorted and indexed</p>
+<p style="font-family:courier">samtools sort -l 9 -@ </p>
+<p style="font-family:courier"> samtools index </p>
+ 
+<h1> Preliminary analysis of the CAGE data in CAGEr </h1>
+<h2> Figure 1 </h2>
+<p> PGCs are the precursors of the germ cells and in many organisms are specified by maternal-inherited cytoplasmic factors
+In zebrafish, transcriptional activation during embryogenesis allows.. .TFs play a fundamental role in the definition of the germ layers and following tissues.
+
+transcription code, which reflects regulatory events occurring at the DNA level, can be studied through CAGEseq. Difference between maternal and zygotic transcriptional grammar have been found in zebrafish and mouse, suggesting that germ and somatic lines differentiate through transcription start.
+We performed CAGE on zebrafish PGCs to define the continuity of maternal grammar during germ line formation.
+</p>
+<!--begin.rcode eval = FALSE
+
+# Nov 2019
+## Find cTSS positions for danRer7
+library(BSgenome.Drerio.UCSC.danRer7)
+## new version of cager for importing bam files (CAGEr 1.30.1)
+library(CAGEr)
+
+
+setwd("/mnt/biggles/csc_projects/dunja/PGC_Fabio/newRun/")
+inputFilesNew = list.files(pattern = "\\.sorted.bam$")
+
+names <- c("pgchigh1", "pgchigh2", "pgcprim5", "somahigh1", "somahigh2", "somaprim5")
+
+
+#########
+### Run CAGEr pipeline to get consensus clusters ####
+
+danRer7CAGEset <- new("CAGEset", genomeName = "BSgenome.Drerio.UCSC.danRer7", inputFiles = inputFilesNew, inputFilesType = "bam", 
+                       sampleLabels = names)
+getCTSS(danRer7CAGEset)
+
+## check library size
+librarySizes(danRer7CAGEset)
+
+## only new set
+mergeSamples(danRer7CAGEset, 
+             mergeIndex = c(1,1,2,3,3,4), 
+             mergedSampleLabels = c("highPGC1", "primPGC4", "highSoma1", "primSoma4"))
+
+## save
+setwd('~/Fabio_Projects/PGC/CAGE_PGC/AnalysisPGC/Tables/Figure1/')
+saveRDS(danRer7CAGEset, 'T1_1_Unprocessed_CAGEser_PGC_merged.rds')
+
+```
+end.rcode-->
+
+<!--begin.rcode eval = FALSE
+## merge old and new CAGE runs
+setwd("/mnt/biggles/csc_projects/dunja/PGC_Fabio/")
+inputFilesOld = list.files(pattern = "\\.sorted.bam$")
+library(BSgenome.Drerio.UCSC.danRer7)
+## new version of cager for importing bam files (CAGEr 1.30.1)
+library(CAGEr)
+
+setwd("/mnt/storage/nevena/mapped/180521_D00467_0309_BCCB8BANXX/")
+inputFiles = list.files(pattern = "\\.sorted.bam$")[c(3:6,9:14)]
+myCAGEset <- new('CAGEset', genomeName     = "BSgenome.Drerio.UCSC.danRer7"
+              , inputFiles     = inputFiles
+              , inputFilesType = "bam"
+              , sampleLabels   = sub( ".bam", "", basename(inputFiles))
+)
+
+getCTSS(myCAGEset)
+## merge replicates
+mergeSamples(myCAGEset, mergeIndex = c(1,1,2,2,3,3,4,4,5,5), mergedSampleLabels = c('epi30_nanti','primPGC1','primPGC2', 'soma1', 'soma2'))
+## merge new and old cage run
+merged.cage <- mergeCAGEsets(myCAGEset, danRer7CAGEset)
+
+setwd('~/Fabio_Projects/PGC/CAGE_PGC/AnalysisPGC/')
+saveRDS(myCAGEset, 'CAGEset1PGCSamplesForCorrelation.rds')
+saveRDS(myCAGEset.new.early, 'CAGEset2PGCSamplesForCorrelation.rds')
+## merge CAGE objects 
+merged.cage <- mergeCAGEsets(myCAGEset, myCAGEset.new)
+
+## save
+setwd('~/Fabio_Projects/PGC/CAGE_PGC/AnalysisPGC/Tables/Figure1/')
+saveRDS(danRer7CAGEset, 'T1_2_Unprocessed_CAGEser_PGC_merged_OldNew.rds')
+
+end.rcode-->
+
+<p> <b>Reverse Cumulative plot </b></p>
+
+<!--begin.rcode eval = FALSE
+
+## plot reverse cumulative distribution and normalize
+setwd('~/Fabio_Projects/PGC/CAGE_PGC/AnalysisPGC/PlotsPaper/Figure1/')
+pdf('Fig1_1_RevCum.png')
+plotReverseCumulatives(danRer7CAGEset, values = 'raw', fitInRange = c(10, 1000), onePlot = TRUE)
+dev.off()
+
+# normalize
+normalizeTagCount(danRer7CAGEset, method = "powerLaw",
+                   fitInRange = c(5, 1000), alpha = 1.15, T = 1*10^6)
+normalizeTagCount(myCAGEset, method = "powerLaw",
+                   fitInRange = c(5, 1000), alpha = 1.16, T = 1*10^7)
+
+pdf('Fig1_2_RevCum.png')
+plotReverseCumulatives(danRer7CAGEset, values = 'normalized', fitInRange = c(10, 1000), onePlot = TRUE)
+dev.off()
+end.rcode-->
+
+<!--begin.rcode, eval = FALSE
+## get tag clusters and consensus clusters with cager
+
+.cager.pipeline <- function(x, TpmThreshold = 1){
+  merged.cage <- x
+  
+  clusterCTSS(object = merged.cage, 
+            threshold = TpmThreshold, 
+            thresholdIsTpm = TRUE, 
+            nrPassThreshold = 1, 
+            method = "distclu", 
+            maxDist = 20, 
+            removeSingletons = TRUE, 
+            keepSingletonsAbove = 5)
+## TC interquantile widths
+  cumulativeCTSSdistribution(merged.cage, 
+                           clusters = "tagClusters")
+  quantilePositions(merged.cage, 
+                  clusters = "tagClusters", 
+                  qLow = 0.1, 
+                  qUp = 0.9)
+## consensus clusters
+  aggregateTagClusters(merged.cage, 
+                     tpmThreshold = 5, 
+                     qLow = 0.1, 
+                     qUp = 0.9, 
+                     maxDist = 100)
+  return(merged.cage)
+}
+
+myCAGEset2 <- .cager.pipeline(myCAGEset, 1)
+## save
+setwd('~/Fabio_Projects/PGC/CAGE_PGC/AnalysisPGC/Tables/Figure1/')
+saveRDS(danRer7CAGEset, 'T1_3_Processed_CAGEser_PGC_merged.rds')
+end.rcode-->
+
+<p> <b> Cluster CTSS with tpms > 1 and not farer than 40 bps </b> </p>
+
+<!--begin.rcode eval = FALSE
+## alternative clustering
+clusterCTSS(danRer7CAGEset, threshold=1, maxDist = 40, thresholdIsTpm=TRUE, method="distclu")
+cumulativeCTSSdistribution(danRer7CAGEset, clusters="tagClusters")
+quantilePositions(danRer7CAGEset, clusters="tagClusters")
+end.rcode-->
+
+<p> <b>Extract single tag clusters and plot interquartile widths </b> </p>
+
+<!--begin.rcode eval = FALSE
+## function to extract single tag clusters from tag cluster list
+sample.names <- as.character(sampleLabels(danRer7CAGEset))
+tc.list <- lapply(sample.names, function(x){ 
+			  tc <- tagClusters(danRer7CAGEset, 
+			                    sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+			  tc <- tc[tc$chr %in% paste("chr",1:25, sep = ""),]
+			  tc$sampleID <- x
+			  return(tc)})
+out.name <- 'PGCCAGE'
+## Plot IQ widths
+## pages in pdf (one per sample)
+setwd('~/Fabio_Projects/PGC/CAGE_PGC/AnalysisPGC/PlotsPaper/Figure1/')
+pdf(paste("Figure1_3_IQwidthsPGC_
+          ", out.name, ".pdf", sep = ""))
+for(i in 1:length(tc.list)){
+	med = median(tc.list[[i]]$interquantile_width)
+	m =  max(table(tc.list[[i]]$interquantile_width))
+	print(ggplot(tc.list[[i]], aes(x = interquantile_width)) + 
+	        geom_histogram(binwidth = 1, colour = "white", fill = "forestgreen") + 
+	        coord_cartesian(xlim = c(0,100)) + theme_bw() + 
+	        geom_vline(xintercept = med) + 
+	        annotate("text",x = med + 5, y = m - 10,label = "median") + 
+	        ggtitle(paste("Interquantile width for sample: \n", sample.names[i])) )
+}
+dev.off()
+
+## Plot IQwidth2
+## plot interquartile widths
+sample.names.old <- as.character(sampleLabels(myCAGEset))
+tc.list.old <- lapply(sample.names.old, function(x){ 
+			  tc <- tagClusters(myCAGEset, 
+			                    sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+			  tc <- tc[tc$chr %in% paste("chr",1:25, sep = ""),]
+			  tc$sampleID <- x
+			  return(tc)})
+
+cbp1 <- c("red", "lightgreen", "darkcyan", "purple")
+names(cbp1) <- danRer7CAGEset30perc@sampleLabels
+# plot
+p <- ggplot(iqs_gg, aes(x = interquantile_width, fill = groupID,colour = groupID)) +
+	geom_histogram(binwidth = 1, position = "identity") +
+	coord_cartesian(xlim = c(0,75)) +
+  theme_bw() + 
+  scale_fill_manual(values = cbp1) +
+  scale_color_manual(values = cbp1) +
+	facet_wrap(~sampleID, scales = "free", ncol = 2)
+pdf("Figure1_4_InterqWidths_PGC.pdf",useDingbats= FALSE, width = 20)
+print(p)
+dev.off()
+end.rcode-->
+
+<p> <b> Analysis of dinucleotides initiators </b> </p>
+<p>This function center the TSSs to the dominant peak and extract the dinucleotide initiator. It then calculates the frequency of each dinucleotide by dividing the occurrence of each dinucleotide by their sum. </p>
+
+<!--begin.rcode eval = FALSE
+#### Initiators 
+## get sequences around the dominant TSS function ##
+# get list of tag clusters
+## load data
+library(ggplot2)
+library(GenomicRanges)
+library(BSgenome.Drerio.UCSC.danRer7)
+
+setwd("~/Desktop/Postdoc/Data_Analysis/CAGEsets/")
+danRer7CAGEset <- readRDS("CAGEsetPGCsomaEarlyLateMerged.replicates.rsd")
+
+## merge replicates
+mergeSamples(danRer7CAGEset, mergeIndex = c(1,1,3,2,2,4), 
+             mergedSampleLabels = c("highPGC", "highSoma","primPGC", "primSoma"))
+
+## generate a list of tag clusters
+tc.list <- lapply(sampleLabels(danRer7CAGEset), function(x){ tagClusters(danRer7CAGEset, sample = x, returnInterquantileWidth = TRUE,  
+                             qLow = 0.1, qUp = 0.9)})
+names(tc.list) <- sampleLabels(danRer7CAGEset)
+# write function
+.getSequences <- function(x, range = c(400,400), SeqLengths, bs_genome, remove.na = FALSE){
+	x <- x[sample(1:nrow(x), nrow(x)),] # rewrite x by shuffle sequences 
+	# into granges from dominant
+	tc.gr <- GRanges(seqnames = x$chr, ranges = IRanges(start = x$dominant_ctss, end = x$dominant_ctss), 
+	                 strand = x$strand, interquantile_width = x$interquantile_width, seqlengths = SeqLengths)
+	# extend grange to the flanking regions
+	tc.flank <- trim(promoters(tc.gr, upstream = range[1], downstream = range[2])) ## 400 up and 400 down
+	selection <- width(tc.flank) == sum(range) ## only those with width = 800bp
+	tc.flank <- tc.flank[selection]
+	tc.flank <- tc.flank[order(tc.flank@elementMetadata$interquantile_width)] ## order by IQ width
+	# get sequence
+	tc.seq <- getSeq(bs_genome, tc.flank)
+	#if(remove.na == TRUE){
+	#	tc.seq <- clean(tc.seq)
+	#}
+	return(tc.seq)
+}
+# get seqs for 2bp around dominant peaks: range = c(1,1)
+seqs.tc <- lapply(tc.list, .getSequences, range = c(1,1), 
+                  SeqLengths = seqlengths(BSgenome.Drerio.UCSC.danRer7), bs_genome = BSgenome.Drerio.UCSC.danRer7, remove.na = TRUE)
+# determine proportions
+seqs.table <- lapply(seqs.tc, function(x){as.data.frame(table(x))}) ## table counts each combination
+seqs.prop <- lapply(seqs.table, function(x){x$prop <- (x$Freq/sum(x$Freq))*100;return(x)})
+# file for plotting
+initiators <- do.call("rbind",mapply(cbind, seqs.prop, "SampleID"=names(seqs.table), SIMPLIFY=F))
+rownames(initiators) <- 1:nrow(initiators) 
+## remove NN
+grep('N', initiators$x)-> nn
+initiators <- initiators[-nn,]
+
+## Plots
+# all in one plot:
+col <- c('lightgreen', 'orchid', 'darkcyan', 'purple')
+p <- ggplot(initiators, aes(x = x, y = prop, fill = SampleID)) +
+  scale_fill_manual(values = col) + geom_col(position = "dodge") +  theme_bw()
+p
+ 
+# save
+pdf(paste0("/AnalysisPGC/Initiators.pdf"))
+print(p)
+dev.off()
+
+
+##### subset upregulated genes
+tcs1_res <- readRDS('../Tables/TSSofUpregulatedGenesInPGCandSoma.rds')
+tcs1_res[[1]] <- data.frame(tcs1_res[[1]]) 
+tcs1_res[[2]] <- data.frame(tcs1_res[[2]]) 
+
+.getSequences.upreg <- function(x, range = c(400,400), SeqLengths, bs_genome, remove.na = FALSE){
+	x <- x[sample(1:nrow(x), nrow(x)),] # rewrite x by shuffle sequences 
+	# into granges from dominant
+	tc.gr <- GRanges(seqnames = x$seqnames, ranges = IRanges(start = x$dominant_ctss, end = x$dominant_ctss), 
+	                 strand = x$strand, seqlengths = SeqLengths)
+	# extend grange to the flanking regions
+	tc.flank <- trim(promoters(tc.gr, upstream = range[1], downstream = range[2])) ## 400 up and 400 down
+	selection <- width(tc.flank) == sum(range) ## only those with width = 800bp
+	tc.flank <- tc.flank[selection]
+	# get sequence
+	tc.seq <- getSeq(bs_genome, tc.flank)
+	#if(remove.na == TRUE){
+	#	tc.seq <- clean(tc.seq)
+	#}
+	return(tc.seq)
+}
+## get sequences for 2 nucleotide initiators
+seqs.tc.up <- lapply(tcs1_res, .getSequences.upreg, range = c(1,1), 
+                  SeqLengths = seqlengths(BSgenome.Drerio.UCSC.danRer7), bs_genome = BSgenome.Drerio.UCSC.danRer7, remove.na = TRUE)
+
+seqs.table.up <- lapply(seqs.tc.up, function(x){as.data.frame(table(x))}) ## table counts each combination
+seqs.prop.up <- lapply(seqs.table.up, function(x){x$prop <- (x$Freq/sum(x$Freq))*100;return(x)})
+# file for plotting
+initiators.up <- do.call("rbind",mapply(cbind, seqs.prop.up, "SampleID"=names(seqs.table.up), SIMPLIFY=F))
+rownames(initiators.up) <- 1:nrow(initiators.up) 
+
+
+## Plots
+# all in one plot:
+col <- c('lightgreen', 'orchid', 'darkcyan', 'purple')
+p <- ggplot(initiators.up, aes(x = x, y = prop, fill = SampleID)) +
+  scale_fill_manual(values = col) + geom_col(position = "dodge") +  theme_classic()
+p
+
+### YR and YC initiators
+## group YC or YR initiators
+
+## YR initiators
+yr.function <- function(x){
+  for(i in 1:length(x)){
+    s1 <- data.frame(x)
+    yr.initiators <- subset(s1, s1$x == 'CA' | s1$x == 'TG' | s1$x == 'TA' | s1$x == 'CG')
+    ini.frame <- data.frame(Ini = 'YR', Freq = sum(yr.initiators$Freq), Prop = sum(yr.initiators$prop))
+  }
+  return(ini.frame)
+}
+## YC initiators
+yc.function <- function(x){
+  for(i in 1:length(x)){
+    s1 <- data.frame(x)
+    y.initiators <- subset(s1, s1$x == 'CC' | s1$x == 'TC')
+    ini.frame <- data.frame(Ini = 'YC', Freq = sum(y.initiators$Freq), Prop = sum(y.initiators$prop))
+  }
+  return(ini.frame)
+}
+
+yr.initiators <- lapply(seqs.prop, yr.function)
+yc.initators <- lapply(seqs.prop, yc.function)
+## bind lists
+f.bind.list <- function(x){
+  yr.table <- do.call("rbind",mapply(cbind, x, "SampleID"=names(x),
+                                     SIMPLIFY=F))
+  return(yr.table)
+}
+
+ini.yr <- f.bind.list(yr.initiators)
+ini.yc <- f.bind.list(yc.initators)
+## plot
+z <- ini.yr
+plot.yr <- function(z){
+  ## order levels of sampleID
+  z$SampleID <- 
+  factor(z$SampleID,levels = levels(z$SampleID)[c(8,1,3,7,5,4,6,2,9,12,11,14)])
+  z <- na.omit(z)
+  ## plot
+  p <- ggplot(z, aes(x = SampleID, y = Prop)) + geom_col() + theme(axis.text.x = element_text(angle = 75, hjust = 1)) + ylab("percentage") 
+  p
+}
+```
+end.rcode-->
+
+<p> <b> Heatmaps of dinucleotide frequencies </b> </p>
+<p>The function outputs heatmaps of dinucleotide frequencies "TA","CG", "SS","WW".</p>
+<!--begin.rcode eval = FALSE
+
+## plot heatmaps of dinucleotide frequency
+library(heatmaps)
+out.name <- 'PGCCAGE'
+## order tclist elements by iq_width
+order_by_iqwidt <- function(x){
+  ordered.tc <- x[order(x$interquantile_width),]
+  return(ordered.tc)
+}
+tc.list <- lapply(tc.list, order_by_iqwidt)
+
+## heatmaps
+library(heatmaps)
+for(i in 1:length(tc.list)){
+	seqs.tc <- .getSequences(tc.list[[i]], range = c(400,400), SeqLengths = seqlengths(BSgenome.Drerio.UCSC.danRer7), bs_genome = BSgenome.Drerio.UCSC.danRer7, remove.na = FALSE)
+	s.name <- names(tc.list)[i]
+	# patterns
+	pat <- c("TA","CG", "SS","WW")
+	pats <- lapply(pat, function(x){ PatternHeatmap(seqs.tc, x, coords = c(-400,400))})
+	patsmooth <- lapply(pats, function(x){ smoothHeatmap(x, output.size=c(1000, 800), sigma = c(15, 3), algorithm="kernel")})
+	# save
+	png(paste0("../../Data_Analysis/CAGEsets/PGC/heatmap_",out.name,"_",s.name,".png"), height=20, width=40, units="cm", res=150)
+	plotHeatmapList(patsmooth, groups=1:4, color=list("Blues","Blues","Blues","Blues"))
+	dev.off()
+}
+end.rcode-->
+
+<p> <b> Genomic elements </b> </p>
+<p>This code is to calculate and plot to which genomic elements the CAGE clusters overlap. Annotations are obtained by the function annotatePeak in ChIPseeker.</p>
+
+<!--begin.rcode eval = FALSE
+## plot proportion of genomic elements where cage clusters are found
+library(dplyr)
+library(AnnotationDbi)
+library(ChIPseeker)
+
+## extract interquantile widths  
+sample.names <- unname(sampleLabels(danRer7CAGEset))
+iqs <- lapply(sample.names, function(x){
+		      tc <- tagClusters(danRer7CAGEset, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+		      tc <- tc[tc$chr %in% paste("chr",1:25, sep = ""),]
+		      tc$sampleID = x
+		      return(tc)
+		 })
+iqs_gg <- bind_rows(iqs)
+# add colour group
+iqs_gg$groupID <- gsub('.{1}$','',iqs_gg$sampleID)
+
+## ANNOTATE PEAKS
+txdb.ens <- loadDb("../../Data_Analysis/annotation/txdb_DanRer7.sqlite")
+
+# need GRanges list
+tc.gr <- lapply(iqs, function(tc) {
+			tc.gr <- GRanges(seqnames = tc$chr, 
+					 ranges = IRanges(start = tc$q_0.1, end = tc$q_0.9),
+					 dominant_ctss = tc$dominant_ctss,
+					 strand = tc$strand, tpm = tc$tpm, tpm_dominant = tc$tpm.dominant_ctss,
+					 seqlengths = seqlengths(BSgenome.Drerio.UCSC.danRer7))
+			return(tc.gr)
+		 })
+# Annotate peak
+names(tc.gr) <- sample.names
+peakAnnoList <- lapply(tc.gr, annotatePeak, TxDb=txdb.ens, tssRegion=c(-3000, 1000), verbose=FALSE, sameStrand = TRUE)
+## plot
+# condense categories so less colours in plot
+
+## PLOT PROPORTION OF GENOMIC ELEMENTS
+anno <- lapply(peakAnnoList, function(x){
+		       anno <- as_tibble(x@anno)
+		       anno$anno_simple <- anno$annotation
+		       # all exons/introns as one
+		       anno$anno_simple[grepl("Exon",anno$anno_simple)] <- "Exon"
+		       anno$anno_simple[grepl("Intron",anno$anno_simple)] <- "Intron"
+		       # downstream as one
+		       anno$anno_simple[grepl("Downstream",anno$anno_simple)] <- "Downstream < 3kb"
+		       # upstream promoter as one
+		       anno$anno_simple[anno$anno_simple %in% c("Promoter (1-2kb)","Promoter (2-3kb)")] <- "Promoter (1-3kb)"
+		       # end
+		       return(anno[,c("geneId","anno_simple")])
+		 })
+anno_long <- bind_rows(anno, .id="sampleID")
+# make ggplot bar plot ready
+anno_gg <- anno_long %>%
+	group_by(sampleID) %>%
+	add_tally(name = "sample_n") %>%	
+	group_by(sampleID,anno_simple) %>%
+	summarize(N = n(),
+		  prop = (N/sample_n[1])*100,
+		  n_sample = sample_n[1])
+# order samples for reverse barplot
+anno_gg$sampleID <- factor(anno_gg$sampleID, levels = rev(unique(anno_gg$sampleID)))	
+# order the annotations
+anno_gg$anno_simple <- factor(anno_gg$anno_simple, levels = rev(c("Promoter (1-3kb)","Promoter (<=1kb)","5' UTR","Exon","Intron","3' UTR","Downstream < 3kb","Distal Intergenic")))
+# plot
+cbp1 <- c("#A40607", "#F0C595","#009E73", "#7288B9", "#733080", "#D55E00","#F4BAC8","#999999")
+
+names(cbp1) <- c("Promoter (1-3kb)","Promoter (<=1kb)","5' UTR","Exon","Intron","3' UTR","Downstream < 3kb","Distal Intergenic")
+p <- ggplot(anno_gg, aes(x = sampleID, y = prop, fill = anno_simple, colour = anno_simple)) +
+	geom_bar(stat="identity") +
+	coord_flip() +
+	scale_fill_manual(values = cbp1) +
+	scale_color_manual(values = cbp1) +
+	theme_bw() +
+        xlab("Percentage") +
+	ylab("") +	
+	guides(fill = guide_legend(reverse = TRUE),
+	       color = guide_legend(reverse = TRUE)) 
+pdf("../../Data_Analysis/CAGEsets/PGC/PGCannoCAGE.pdf")
+print(p)
+dev.off()
+end.rcode-->
+
+<h2> Figure 2 </h2>
+<p> In figure 1 we show that cage could be successfully performed on PGCs at two stages of development. Global analysis shows overall canonical CAGE outcomes and good reproducibility between replicates.
+
+We then looked at differences between PGCs and somatic cells.
+
+</p>
+
+<p> <b> Metaplot for dinucleotide frequencies in PGC and somatic promoters </b> </p>
+<!--begin.rcode eval = FALSE
+
+### FREQUENCY OF DINUCLEOTIDES
+## plot shifting dominant peaks
+## Plots occurrence average of SS and WW patterns through seqpattern package
+## input = data frame
+setwd('~/Desktop/Postdoc/Data_Analysis/Plots/Plots_CAGE_PGC/')
+
+## create a list of tc from the cage object
+iqs <- lapply(sample.names, function(x){
+		      tc <- tagClusters(danRer7CAGEset30perc, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+		      tc <- tc[tc$chr %in% paste("chr",1:25, sep = ""),]
+		      tc$sampleID = x
+		      return(tc)
+		 })
+names(iqs) <- danRer7CAGEset30perc@sampleLabels[-1]
+danRer7CAGEset30perc@sampleLabels
+```
+# EXAMPLE TABLE
+     #FF0000FF    #CCFF00FF    #00FF66FF    #0066FFFF    #CC00FFFF 
+ # "epi30nanti"    "highPGC"   "highSoma"    "primPGC"   "primSoma" 
+
+```{r}
+## plot pattern average for each tc
+for(i in 1:length(iqs)){
+  x <- data.frame(iqs[[i]])
+  s.name <- names(iqs)[i]
+  ## assign maternal and zygotic dominat peaks
+  new.data.frame <- data.frame(seqnames = x$chr, 
+                               start = x$start, end = x$end,
+                               strand = x$strand, 
+                               dominant_ctss = x$dominant_ctss,
+                               tpm_dominant_ctss = x$tpm.dominant_ctss,
+                               IQ_width = x$interquantile_width)
+  #sort the clusters by IQ width
+  new.data.frame <- new.data.frame[order(new.data.frame$IQ_width),]
+  ## plot dinucleotide frequncy
+  zebrafishPromotersTSS<-GRanges(seqnames = new.data.frame$seqnames,
+                                 ranges=IRanges(start = new.data.frame$dominant_ctss, 
+                                                end = new.data.frame$dominant_ctss),
+                                 strand = new.data.frame$strand,
+                                 
+                                 seqlengths = seqlengths(Drerio))
+  zebrafishPromotersTSSflank <- promoters(zebrafishPromotersTSS, upstream = 200,
+                                          downstream = 200)
+  ## trim out of bound regions
+  zebrafishPromotersTSSflank <- trim(zebrafishPromotersTSSflank)
+
+  zebrafishPromotersTSSflankSeq <- getSeq(Drerio, zebrafishPromotersTSSflank)
+  pdf(paste0(s.name, 'shiftingpromoters.pdf'), width=10, height=5)
+  seqPattern::plotPatternOccurrenceAverage(zebrafishPromotersTSSflankSeq,
+                       patterns = c('WW', 'SS'), #c("AA", "TA", "CG", "GC"),
+                       #seqOrder = zebrafishPromotersTSSflank$interquantileWidth
+                       flankUp = 200, flankDown = 200, color = c("red", "blue")
+                       )
+  dev.off()
+}
+
+## COUNT SHARP AND BROAD PROMOTERS
+## count number of sharp and broad promoters for differentially expressed genes
+## between PGCs and soma
+
+### analysis of pentamers
+library(ggplot2)
+library(AnnotationDbi)
+library(ChIPpeakAnno)
+library(dplyr)
+
+## load cage data
+myCAGEset <- readRDS("~/Desktop/Postdoc/Data_Analysis/CAGEsets/CAGEset_PGC_soma_Early_Late.rds")
+CAGEwholeEmbryo <- readRDS("~/Desktop/Postdoc/Data_Analysis/CAGEsets/CAGEsetWholeEmbryoPrim5danRer7tpmThr1.rds")
+
+# select prim5 samples
+sample.names <- unname(sampleLabels(myCAGEset)[c(3,6)])
+names.embryo <- unname(sampleLabels(CAGEsetEmbryo))
+
+## load diff expressed genes and get the promoter coordinates
+deseq.up.pgc <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/UpregulatedGenesInPGCvsSomaPrim5.txt', sep = '\t')
+deseq.up.soma <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/UpregulatedInSomavsPGCatPrim5.txt', sep = '\t')
+## load non significant DEG
+deseq.ns <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/DEGbetweenPGCandSomaAtPrim5_positiveisPGC_negativeisSoma.txt', sep = '\t', row.names = NULL)
+
+
+## add class column for DE
+deseq.up.pgc$de_group <- 'PGC_up'
+deseq.up.soma$de_group <- 'Soma_up'
+deseq.ns$de_group <- 'NS'
+## bind the two frames
+deseq.results <- bind_rows(deseq.up.pgc,deseq.up.soma)
+## use column X as rownames
+rownames(deseq.results) <- deseq.results$X
+deseq.results$X <- NULL
+
+## load Tx data
+txdb <-loadDb('~/Desktop/Postdoc/Data_Analysis/annotation/txdb_DanRer7.sqlite')
+txdb7 <- toGRanges(txdb)
+
+## merge deseq table with gene coordinates
+## matches DGE class and logFoldChange with gene coordinates
+deseq.coordinates <- merge(as.data.frame(txdb7), deseq.results, by = 0) %>%
+  mutate(cc_id = paste(seqnames,start,end,width,strand,sep = "_"))
+deseq.res.gr <- GRanges(seqnames = deseq.coordinates$seqnames,
+                        ranges = IRanges(start = deseq.coordinates$start,
+                                         end = deseq.coordinates$end),
+                        strand = deseq.coordinates$strand)
+values(deseq.res.gr) <- deseq.coordinates[,7:ncol(deseq.coordinates)]
+
+## match tag clusters with DEG
+tcs <- lapply(sample.names, function(x){
+  a <- tagClusters(myCAGEset, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+  a <- a[a$chr %in% paste("chr",1:25, sep = ""),]
+  a$sampleID <- x
+  a <- mutate(a, promoterID = paste(chr,start,end,strand, sep = "_"))
+  a <- annotatePeak(GRanges(a), TxDb=txdb, tssRegion=c(-1000, 100), verbose=FALSE, 
+                     sameStrand = TRUE)
+  gr <- a@anno
+  gr <- subset(gr, gr$annotation == 'Promoter')
+  return(gr)
+})
+names(tcs) <- sample.names
+### generate annotate TC for whole embryo
+## use name.embryo
+## merge the two lists
+tcs <- c(tcs, tcs1)
+
+### merge promoter tss with DEG class and logFoldChange
+tcs_res <- purrr::map(tcs, function(x,y){
+  # determine all overlaps and have granges map to TC coordinates
+  hits <- findOverlaps(x,y)
+  x_sub <- x[queryHits(hits)]
+  y_sub <- y[subjectHits(hits)]
+  tc_deseq <- x_sub
+  values(tc_deseq) <- cbind(values(tc_deseq), values(y_sub))
+  # keep only highest:
+  df <- tbl_df(data.frame(promoterID = tc_deseq$promoterID,
+                          tpm = tc_deseq$tpm,
+                          cc_id = tc_deseq$cc_id)) %>%
+    group_by(cc_id) %>%
+    dplyr::slice(which.max(tpm))
+  # select only these promoterIDs
+  sel <- which(tc_deseq$promoterID %in% df$promoterID & tc_deseq$cc_id %in% df$cc_id)	
+  return(tc_deseq[sel])
+}, y = deseq.res.gr)
+names(tcs_res) <- c(sample.names, names.embryo)
+
+## PLOT
+### 1 all genes:
+## count sharp vs broad
+sharp_vs_broad_all <- lapply(tcs, function(x){
+  x <- data.frame(x)
+  gr <- mutate(x, Width = 0)
+  gr$Width[gr$interquantile_width >= 9] <- 'Broad'
+  gr$Width[gr$interquantile_width < 9] <- 'Sharp'
+  
+  return(gr)
+})
+
+## bind the two lists and add sample ID identifier
+sharp_vs_broad_all2 <- bind_rows(sharp_vs_broad_all)
+
+## transform for ggplot
+## all genes
+sharp_vs_broad_plot_all3 <- sharp_vs_broad_all2 %>% 
+  group_by(sampleID) %>% add_tally(name = "Total") %>%
+  group_by(sampleID, Width) %>% add_tally(name = "sample_n")
+
+## normalize
+sharp_vs_broad_plot_all3$normalized <- 
+  sharp_vs_broad_plot_all3$sample_n/sharp_vs_broad_plot_all3$Total
+
+
+#######
+
+
+##2 DEG
+sharp_vs_broad <- lapply(tcs_res, function(x){
+  x <- data.frame(x)
+  gr <- mutate(x, Width = 0)
+  gr$Width[gr$interquantile_width >= 9] <- 'Broad'
+  gr$Width[gr$interquantile_width < 9] <- 'Sharp'
+  
+  return(gr)
+})
+
+## bind the two lists and add sample ID identifier
+sharp_vs_broad_deg <- bind_rows(sharp_vs_broad, .id = 'sampleID')
+sharp_vs_broad_all_subset <- subset(sharp_vs_broad_deg, sharp_vs_broad_deg$sampleID == 'PGC_prim5_r4_1_S5'
+                                    & sharp_vs_broad_deg$de_group == 'PGC_up' | 
+                                      sharp_vs_broad_deg$sampleID == 'soma_prim5_r4_1_S6' & sharp_vs_broad_deg$de_group == 'Soma_up' |
+                                      sharp_vs_broad_deg$sampleID == 'CAGEprim5SRR516559danRer7.sorted' & sharp_vs_broad_deg$de_group == 'Soma_up')
+
+## get count of sharp and broad normalized by the total number of TSS used
+sharp_vs_broad_plot <- sharp_vs_broad_all_subset %>% 
+  group_by(sampleID) %>% 	add_tally(name = "All_sample_n") %>%
+  group_by(sampleID, de_group, Width) %>% 	add_tally(name = "sample_n") %>%
+  summarize(N = n(),
+            prop = (N/All_sample_n[1]),
+            n_sample = sample_n[1])
+
+
+## graphics
+color2 <- c('red','darkcyan', 'purple')
+## bars for all TSS
+p <- ggplot(sharp_vs_broad_plot_all3, aes(x = Width, y = normalized, fill = sampleID)) +
+  geom_col(position ="dodge") + scale_fill_manual(values = color2) + theme_classic()
+## bars for DEG
+p <- ggplot(sharp_vs_broad_plot, aes(x = Width, y = prop, fill = sampleID)) +
+  geom_col(position ="dodge") + scale_fill_manual(values = color2) + theme_classic()
+
+color3 <- c('darkcyan', 'purple')
+## density
+p <- ggplot(sharp_vs_broad_plot_all, aes(x = interquantile_width)) +
+     geom_density(aes(fill = sampleID), alpha = 0.4) +  scale_fill_manual(values = color3) + 
+  theme_bw() + xlim(c(0,100))
+
+
+
+end.rcode-->
+
+<h2> Figure 3 </h2>
+<!--begin.rcode eval = FALSE
+
+### SHIFTING PROMOTERS ANALYSIS
+
+## MANUALLY MERGE EARLY AND LATE PROMOTERS FOR SHIFT ANALYSIS
+## merge early and late by granges overlap and annotate tag clusters
+
+## make txdb object
+library(CAGEr)
+library(AnnotationDbi)
+library(GenomicRanges)
+
+txdb <- loadDb('../annotation/txdb_DanRer7.sqlite')
+
+## function for annotation of TSS
+annotate.cage.peaks <- function(x, genome = 'org.Dr.eg.db'){
+  cage.peak <- annotatePeak(GRanges(x), tssRegion = c(-500, 500), TxDb = txdb,
+                            annoDb = genome, sameStrand = T, verbose = F)
+  cage.frame <- data.frame(cage.peak@anno)
+  cage.frame <- subset(cage.frame, cage.frame$distanceToTSS < 500 & cage.frame$distanceToTSS > -500)
+  
+  return(cage.frame)
+}
+
+## merge early and late
+subset.cage.sample <- function(x,y, subset_class){
+  x <- resize(x,fix='center', width=width(x)+100) ## 50 up and 50 downstream
+  y <- resize(y, fix='center', width=width(y)+100)
+  ov.late <- findOverlaps(x, y) 
+  x[queryHits(ov.late),]
+  ov.late <- y[subjectHits(ov.late),]
+  ov.late <- data.frame(ov.late)
+  colnames(ov.late) <- paste0(colnames(ov.late), '_late')
+  
+  ov.early <- findOverlaps(y, x) 
+  y[queryHits(ov.early),]
+  ov.early <- x[subjectHits(ov.early),]
+  ov.early <- data.frame(ov.early)
+  ## do not rename the columns to allow granges to find the coordinates
+  
+  merged.late.early.frame <- cbind(ov.early, ov.late)
+  merged.late.early <- GRanges(merged.late.early.frame)
+  
+  ## GET ONLY SHIFTING PROMOTERS
+  
+  merged.late.early <- subsetByOverlaps(merged.late.early, subset_class)
+  ## annotate peaks
+  ## requires cage.pipe function
+  cage.anno <- annotate.cage.peaks(merged.late.early, 'org.Dr.eg.db')
+  #cage.anno <- subset(cage.anno, cage.anno$tpm.dominant_ctss > 3 & cage.anno$tpm.dominant_ctss_late > 3)
+  cage.anno$difference <- cage.anno$dominant_ctss_late - cage.anno$dominant_ctss
+  ## change the sign based on strand
+  cage.anno <- GRanges(cage.anno)
+  cage.anno$difference[(as.character(strand(cage.anno)) == '-')] <- -cage.anno$difference[(as.character(strand(cage.anno)) == '-')]
+  cage.anno <- data.frame(cage.anno)
+  
+  return(cage.anno)
+}
+
+cage.anno.shiftInPGCandSoma <- subset.cage.sample(early.pgc, late.pgc, subset_pgc_soma)
+cage.anno.shiftInPGC_Only <- subset.cage.sample(early.pgc, late.pgc, subset_pgc_soma_inv)
+
+## subset cage anno by distance
+cage.anno.pgc.subset <- subset(cage.anno.pgc, cage.anno.pgc$difference > 100 | 
+                                 cage.anno.pgc$difference < -100)
+
+## PLOT
+## creates a new data frame
+## centers it either to the maternal dominant or the zygotic dominant
+## extract the promoter sequences and plots
+merge.TSS <- function(merged.cage.object, method = NULL){
+  new.data.frame <- data.frame(seqnames = merged.cage.object$seqnames, 
+                               start = merged.cage.object$start, end = merged.cage.object$end,
+                               strand = merged.cage.object$strand, 
+                               maternal_dominant_ctss = merged.cage.object$dominant_ctss,
+                               maternal_IQ_width = merged.cage.object$interquantile_width,
+                               zygotic_dominant_ctss = merged.cage.object$dominant_ctss_late, 
+                               tpm.maternal_dominant_ctss = merged.cage.object$tpm.dominant_ctss,
+                               tpm.zygotic_dominant_ctss = merged.cage.object$tpm.dominant_ctss_late,
+                               zygotic_IQ_width = merged.cage.object$interquantile_width_late
+  )
+  
+  ## plot dinucleotide frequncy
+  if(method == "maternal") { ## centered to maternal dominant tss
+    zebrafishPromotersTSS<-GRanges(seqnames = new.data.frame$seqnames,
+                                   ranges=IRanges(start = new.data.frame$maternal_dominant_ctss, 
+                                                  end = new.data.frame$maternal_dominant_ctss),
+                                   strand = new.data.frame$strand,
+                                   IQ_width = new.data.frame$maternal_IQ_width,
+                                   seqlengths = seqlengths(Drerio))
+    
+  }else if(method == "zygotic"){ ## centered to zygotic dominant tss
+    zebrafishPromotersTSS<-GRanges(seqnames = new.data.frame$seqnames,
+                                   ranges=IRanges(start = new.data.frame$zygotic_dominant_ctss, 
+                                                  end = new.data.frame$zygotic_dominant_ctss),
+                                   strand = new.data.frame$strand,
+                                   IQ_width = new.data.frame$zygotic_IQ_width,
+                                   seqlengths = seqlengths(Drerio))
+  }else{
+    stop("'method' parameter must be one of the (\"zygotic\", \"maternal\")")
+  }	
+  ## TATA is between -35 and -23
+  ## extend the region upstream of the main CAGE peak with center to -29
+  zebrafishPromotersTSSflank <- promoters(zebrafishPromotersTSS, upstream = 50,
+                                          downstream = 50)
+  ## get 6bp up and 6bp downstream (-35, -23) to include the TATA region
+  #zebrafishPromotersTSSflank <- resize(zebrafishPromotersTSSflank, width = 12, fix = 'center')
+  
+  return(zebrafishPromotersTSSflank)
+}
+
+zebrafishPromotersTSSflankBoth <- merge.TSS(cage.anno.shiftInPGCandSoma, method = 'zygotic')
+zebrafishPromotersTSSflankSeqBoth <- getSeq(Drerio, zebrafishPromotersTSSflankBoth)
+end.rcode-->
+
+<!--begin.rcode eval = FALSE
+### COMPARE SHIFTING SCORE FOR ALL SOMATIC AND PGC PROMOTERS
+## get full list of promoters with shifting score
+library(BSgenome.Drerio.UCSC.danRer7)
+library(CAGEr)
+library(ChIPseeker)
+library(AnnotationDbi)
+
+setwd("~/Desktop/Postdoc/Data_Analysis/CAGEsets/")
+CAGEset <- readRDS('CAGEset_PGC_soma_Early_Late.rds')
+cage_shifting_embryo <- na.omit(read.csv('~/Desktop/PhD-March-2019-backup/datasets/shiftingPromotersMZT.txt', sep = '\t'))
+
+txdb <- loadDb('../annotation/txdb_DanRer7.sqlite')
+
+aggregateTagClusters(CAGEset, tpmThreshold = 5, qLow = 0.1, qUp = 0.9, maxDist = 100)
+cumulativeCTSSdistribution(CAGEset, clusters = "consensusClusters")
+CAGEsetPGC <- CAGEset
+CAGEsetsoma <- CAGEset
+scoreShift(CAGEsetPGC, groupX = "PGC_high_r1_1_S1_L001_R1", groupY = "PGC_prim5_r4_1_S5",
+                  testKS = TRUE, useTpmKS = FALSE)
+scoreShift(CAGEsetsoma, groupX = "soma_high_r1_1_S2", groupY = "soma_prim5_r4_1_S6",
+           testKS = TRUE, useTpmKS = FALSE)
+## get shifting scores for all the TSSs
+score.shift.pgc <- getShiftingPromoters(CAGEsetPGC,tpmThreshold = 2)
+score.shift.soma <- getShiftingPromoters(CAGEsetsoma,tpmThreshold = 2)
+
+cage.pipe <- function(x, genome){
+  x <- na.omit(x)
+  cage.range <- GRanges(seqnames=x$chr,
+                        ranges=IRanges(start=x$start, end=x$end),
+                        strand=x$strand)
+#number <- which(colnames(x) == 'strand')
+  values(cage.range) <- x$shifting.score
+  
+  cage.peak <- annotatePeak(cage.range, tssRegion = c(-500, 500), TxDb = txdb,
+                            annoDb = genome, sameStrand = T, verbose = F)
+  
+  #plotAnnoPie(cage.peak)
+  cage.frame <- data.frame(cage.peak@anno)
+  ## get only promoters
+  cage.frame.promoters <- subset(cage.frame, cage.frame$annotation == 'Promoter')
+  
+  return(cage.frame.promoters)
+}
+
+PGC.shift <- cage.pipe(score.shift.pgc, 'BSgenome.Drerio.UCSC.danRer7')
+Soma.shift <- cage.pipe(score.shift.soma, "BSgenome.Drerio.UCSC.danRer7")
+
+z <- merge(PGC.shift,Soma.shift, by = 'geneId')
+
+z1 <- subset(z, z$X.x > 0 | z$X.y > 0)
+plot(z$X.x, z$X.y)
+
+shifting.only <- merge(z, cage_shifting_embryo, by.x = 'geneId', by.y = 'ensembl_gene_id')
+shifting.only <- subset(shifting.only, shifting.only$X.x > -0.5 & shifting.only$X.y > -0.5)
+end.rcode-->
+
+<!--begin.rcode eval = FALSE
+library(CAGEr)
+library(seqPattern)
+library(GenomicRanges)
+library(ChIPseeker)
+
+### SOMATIC SHIFTING PROMOTERS IN THE PGCS
+## check shift of somatic shifting promoters in the PGCs
+### plot shift for soma and PGCs side by side
+tc <- lapply(as.character(CAGEset@sampleLabels)[c(1,3,4,6)], function(x){
+  tag <- tagClusters(CAGEset, samples = x, returnInterquantileWidth = TRUE,
+                     qLow = 0.1,qUp = 0.9)
+}
+)
+tc.cage.anno <- lapply(tc, annotate.cage.peaks, 'org.Dr.eg.db')
+
+shifting.id.frame <- cage_shifting_embryo['ensembl_gene_id']
+
+merge.shifting.promoters <- function(x){
+  m <- merge(x,shifting.id.frame, by.x = 'geneId', by.y = 'ensembl_gene_id')
+  return(m)
+}
+
+shifting.list <- lapply(tc.cage.anno, merge.shifting.promoters)
+
+## grange for plot
+## merges early and late shifting promoters
+## sorts by the degree of shift
+subset.cage.object <- function(x,y){
+
+  merged.cage.object <- merge(x, y, by = 'transcriptId')
+  merged.cage.object <- subset(merged.cage.object, merged.cage.object$tpm.dominant_ctss.x > 5
+                               & merged.cage.object$tpm.dominant_ctss.y > 5)
+  ## assign maternal and zygotic dominat peaks
+  new.data.frame <- data.frame(seqnames = merged.cage.object$seqnames.x, 
+                               start = merged.cage.object$start.x, end = merged.cage.object$end.x,
+                               strand = merged.cage.object$strand.x, 
+                               maternal_dominant_ctss = merged.cage.object$dominant_ctss.x,
+                               zygotic_dominant_ctss = merged.cage.object$dominant_ctss.y, 
+                               tpm.maternal_dominant_ctss = merged.cage.object$tpm.dominant_ctss.x,
+                               tpm.zygotic_dominant_ctss = merged.cage.object$tpm.dominant_ctss.y,
+                               transcript = merged.cage.object$transcriptId
+  )
+  #sort the clusters by difference between maternal and zygotic dominant peak position
+  ##change the sign based on strand
+  new.data.frame$difference <- new.data.frame$maternal_dominant_ctss - new.data.frame$zygotic_dominant_ctss
+  new.data.frame <- GRanges(new.data.frame)
+  new.data.frame$difference[(as.character(strand(new.data.frame)) == '-')] <- -new.data.frame$difference[(as.character(strand(new.data.frame)) == '-')]
+  new.data.frame <- data.frame(new.data.frame)
+  new.data.frame <- new.data.frame[order(new.data.frame$difference),]
+
+  return(new.data.frame)
+  
+}
+shifting.somatic <- subset.cage.object(shifting.list[[3]], shifting.list[[4]])
+shifting.pgc <- subset.cage.object(shifting.list[[1]], shifting.list[[2]])
+
+
+### order the PGC shifting for the degree of shift in the somatic
+new.data.frame <- merge(shifting.somatic, shifting.pgc, by = 'transcript')
+new.data.frame <- new.data.frame[order(new.data.frame$difference.x),]
+
+
+zebrafishPromotersTSS.pgc <-GRanges(seqnames = new.data.frame$seqnames.y,
+                               ranges=IRanges(start = new.data.frame$zygotic_dominant_ctss.y, 
+                                              end = new.data.frame$zygotic_dominant_ctss.y),
+                               strand = new.data.frame$strand.y,
+                               
+                               seqlengths = seqlengths(Drerio))
+zebrafishPromotersTSS.pgc <- unique(zebrafishPromotersTSS.pgc)
+zebrafishPromotersTSSflank.pgc <- promoters(zebrafishPromotersTSS.pgc, upstream = 500,
+                                        downstream = 500)
+zebrafishPromotersTSSflankSeq.pgc <- getSeq(Drerio, zebrafishPromotersTSSflank.pgc)
+
+
+pdf('pgcShift.pdf')
+plotPatternDensityMap(zebrafishPromotersTSSflankSeq.pgc,
+                      'TA',
+                      flankUp = 500, flankDown = 500, col = "blue", addReferenceLine = TRUE)
+dev.off()
+### sequence pattern downstream shifting promoters in PGCs
+cage.shifting.pgc.range <- GRanges(seqnames = cage_shifting_pgc$chr,
+                                   IRanges(start = cage_shifting_pgc$start, end = cage_shifting_pgc$end),
+                                   maternal_dominant = cage_shifting_pgc$groupX.pos, 
+                                   zygotic_dominant = cage_shifting_pgc$groupY.pos)
+
+cage.shifting.pgc.range.zygotic <- GRanges(seqnames = cage_shifting_pgc$chr,
+                                   IRanges(start = cage_shifting_pgc$groupY.pos, end = cage_shifting_pgc$groupY.pos),
+                                   strand = cage_shifting_pgc$strand)
+
+cage.shifting.pgc.range.zygotic.prom <- promoters(cage.shifting.pgc.range.zygotic, upstream = 500,
+                                            downstream = 500)
+zebrafishPromotersTSSflankSeq.pgc <- getSeq(Drerio, cage.shifting.pgc.range.zygotic.prom)
+
+plotPatternOccurrenceAverage(regionsSeq = zebrafishPromotersTSSflankSeq.pgc,
+                             
+                               patterns = c("WW", "SS"), flankUp = 500, flankDown = 500,
+                             smoothingWindow = 3, color = c("red3", "blue3"), cex.axis = 0.9)
+
+end.rcode-->
+
+<!--begin.rcode eval = FALSE
+## CHECK PGC USAGE OF MATERNAL INITIATION AT PRIM5
+## calculate the ratio between maternal and zygotic usage at prim5 and compare between soma and PGCs
+library(CAGEr)
+library(GenomicRanges)
+library(ChIPseeker)
+library(AnnotationDbi)
+
+cage_shifting_embryo <- na.omit(read.csv('~/Desktop/PhD-March-2019-backup/datasets/shiftingPromotersMZT.txt', sep = '\t'))
+txdb <- loadDb('../annotation/txdb_DanRer7.sqlite')
+setwd("~/Desktop/Postdoc/Data_Analysis/CAGEsets/")
+CAGEset <- readRDS('CAGEset_PGC_soma_Early_Late.rds')
+
+annotate.cage.peaks <- function(x, genome = 'org.Dr.eg.db'){
+  cage.peak <- annotatePeak(GRanges(x), tssRegion = c(-500, 500), TxDb = txdb,
+                            annoDb = genome, sameStrand = T, verbose = F)
+  cage.frame <- data.frame(cage.peak@anno)
+  cage.frame <- subset(cage.frame, cage.frame$distanceToTSS < 500 & cage.frame$distanceToTSS > -500)
+  
+  return(cage.frame)
+}
+
+## extract tag clusters for early and late PGCs and soma
+tc <- lapply(as.character(CAGEset@sampleLabels)[c(1,3,4,6)], function(x){
+  tag <- tagClusters(CAGEset, samples = x, returnInterquantileWidth = TRUE,
+                     qLow = 0.1,qUp = 0.9)
+}
+)
+tc.cage.anno <- lapply(tc, annotate.cage.peaks, 'org.Dr.eg.db')
+
+## select shifting promoters from shifting promoters list
+shifting.id.frame <- cage_shifting_embryo['ensembl_gene_id']
+merge.shifting.promoters <- function(x){
+  m <- merge(x,shifting.id.frame, by.x = 'geneId', by.y = 'ensembl_gene_id')
+  return(m)
+}
+
+shifting.list <- lapply(tc.cage.anno, merge.shifting.promoters)
+
+
+## calculate tmp ratio between maternal and zygotic
+
+## 1) get tss without tpm threshold
+## 2) get positions of maternal shifting tss
+## 3) get positions of zygotic shifting tss
+## 4) subset maternal tss for zygotic positions
+## 5) subset zygotic tss for maternal positions
+## 6) merge
+## 7) calculate ratio
+merge.early.late <- function(x,y){
+  ## merge early and late tss by ENSEMBL IDs
+  merged.cage.object <- merge(x, y, by = 'transcriptId')
+  ## assign maternal and zygotic dominat peaks
+  new.data.frame.zygotic <- data.frame(seqnames = merged.cage.object$seqnames.y, 
+                               start = merged.cage.object$start.y, end = merged.cage.object$end.y,
+                               strand = merged.cage.object$strand.y,
+                               zygotic_dominant_ctss = merged.cage.object$dominant_ctss.y, 
+                               tpm.zygotic_dominant_ctss = merged.cage.object$tpm.dominant_ctss.y,
+                               transcript = merged.cage.object$transcriptId
+  )
+    new.data.frame.maternal <- data.frame(seqnames = merged.cage.object$seqnames.x, 
+                               start = merged.cage.object$start.x, end = merged.cage.object$end.x,
+                               strand = merged.cage.object$strand.x,
+                               maternal_dominant_ctss = merged.cage.object$dominant_ctss.x, 
+                               tpm.maternal_dominant_ctss = merged.cage.object$tpm.dominant_ctss.x,
+                               transcript = merged.cage.object$transcriptId
+  )
+    ## create granges and subset by overlap
+
+
+  return(new.data.frame)
+  
+}
+## add position of the tss to the cage object
+shifting.somatic <- merge.early.late(shifting.list[[3]], shifting.list[[4]])
+shifting.pgc <- merge.early.late(shifting.list[[1]], shifting.list[[2]])
+
+end.rcode-->
+
+<h2> Figure 4 </h2>
+
+<p> A subset of genes expressed in the oocyte and in the zygotic PGCs show signs of TBP/TBP2-dependent transcription. </p>
+
+<!--begin.rcode eval = FALSE
+
+### makes a data frame to plot dominant tss shift for a subset of genes
+
+#for pieces of code
+## for notes
+### titles
+
+library(CAGEr)
+library(GenomicRanges)
+library(ChIPseeker) ## for function annotatePeak
+library(rtracklayer)
+library(BSgenome.Drerio.UCSC.danRer7)
+library(ChIPpeakAnno) ## for function toGRanges
+library(GenomicFeatures) ## for function makeTxdb
+library(org.Dr.eg.db) ## for annotation package
+library(seqPattern)
+library(heatmaps)
+
+setwd('C:/Users/FMD523/Downloads/CAGE')
+CAGEset <- readRDS("cageset.rds")
+txdb <- loadDb('~/Desktop/Postdoc/Data_Analysis/annotation/txdb_DanRer7.sqlite')
+## retrieve cagesets for each sample
+cage.set.pgc.prim <- tagClusters(myCAGEset,sample = "PGC_prim5_r4_1_S5", returnInterquantileWidth = TRUE,
+                                 qLow = 0.1,qUp = 0.9)
+cage.set.soma.prim <- tagClusters(myCAGEset,sample = "soma_prim5_r4_1_S6", returnInterquantileWidth = TRUE,
+                                  qLow = 0.1,qUp = 0.9)
+cage.set.pgc.high <- tagClusters(myCAGEset,sample = "PGC_high_r1_1_S1_L001_R1", returnInterquantileWidth = TRUE,
+                                  qLow = 0.1,qUp = 0.9)
+cage.set.soma.high <- tagClusters(myCAGEset,sample = "soma_high_r1_1_S2", returnInterquantileWidth = TRUE,
+                                 qLow = 0.1,qUp = 0.9)
+
+### function that annotates cage clusters
+annotate.cage.peaks <- function(x){
+  cage.range <- toGRanges(x)
+  cage.peak <- annotatePeak(cage.range, tssRegion = c(-500, 500), TxDb = txdb,
+                            annoDb = 'org.Dr.eg.db', sameStrand = T, verbose = F)
+  #plotAnnoPie(cage.peak)
+  cage.frame <- data.frame(cage.peak@anno)
+  ## get only promoters
+  cage.frame.promoters <- subset(cage.frame, cage.frame$annotation == 'Promoter')
+  
+  return(cage.frame.promoters)
+}
+cage.anno.high <- annotate.cage.peaks(cage.set.pgc.high)
+cage.anno.prim <- annotate.cage.peaks(cage.set.pgc.prim)
+cage.anno.prim.soma <- annotate.cage.peaks(cage.set.soma.prim)
+cage.anno.high.soma <- annotate.cage.peaks(cage.set.soma.high)
+
+
+## retrieve rnaseq data
+setwd("C:/Users/FMD523/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables")
+up.pgc <- read.csv('UpregGenesPGCvsSomaPrim5.txt', sep = '\t')
+up.soma <- read.csv('UpregulatedInSomavsPGCatPrim5.txt', sep = '\t')
+up.pgc.high <- read.csv('UpregulatedInPGCsVSsomaAtHigh.txt', sep = '\t')
+
+up.pgc.ensembl <- rownames(up.pgc)
+up.soma.ensembl <- rownames(up.soma)
+
+## subset cage object
+subset.cage.object <- function(x,y,z){
+  merged.cage.late <- merge(x, y, by.x = 'geneId', by.y = 0)
+  #merged.cage.late <- merged.cage.late[order(c(merged.cage.late$seqnames, merged.cage.late$start)),]
+  merged.cage.early <- merge(z, y, by.x = 'geneId', by.y = 0)
+  #merged.cage.early <- merged.cage.early[order(c(merged.cage.early$seqnames, merged.cage.early$start)),]
+  
+  merged.cage.object <- merge(merged.cage.early, merged.cage.late, by = 'transcriptId')
+  merged.cage.object <- subset(merged.cage.object, merged.cage.object$tpm.dominant_ctss.x > 5
+                               & merged.cage.object$tpm.dominant_ctss.y > 5)
+  ## assign maternal and zygotic dominat peaks
+  new.data.frame <- data.frame(seqnames = merged.cage.object$seqnames.x, 
+                               start = merged.cage.object$start.x, end = merged.cage.object$end.x,
+                               strand = merged.cage.object$strand.x, 
+                               maternal_dominant_ctss = merged.cage.object$dominant_ctss.x,
+                               zygotic_dominant_ctss = merged.cage.object$dominant_ctss.y, 
+                               tpm.maternal_dominant_ctss = merged.cage.object$tpm.dominant_ctss.x,
+                               tpm.zygotic_dominant_ctss = merged.cage.object$tpm.dominant_ctss.y
+                               )
+  #sort the clusters by difference between maternal and zygotic dominant peak position
+  new.data.frame$difference <- abs(new.data.frame$maternal_dominant_ctss - new.data.frame$zygotic_dominant_ctss)
+  new.data.frame <- new.data.frame[order(new.data.frame$difference),]
+  
+  ## plot dinucleotide frequncy
+  zebrafishPromotersTSS<-GRanges(seqnames = new.data.frame$seqnames,
+                                 ranges=IRanges(start = new.data.frame$zygotic_dominant_ctss, 
+                                                end = new.data.frame$zygotic_dominant_ctss),
+                                 strand = new.data.frame$strand,
+                                 
+                                 seqlengths = seqlengths(Drerio))
+  zebrafishPromotersTSSflank <- resize(zebrafishPromotersTSS, 200, fix = 'center')
+  zebrafishPromotersTSSflankSeq <- getSeq(Drerio, zebrafishPromotersTSSflank)
+  seqPattern::plotPatternOccurrenceAverage(zebrafishPromotersTSSflankSeq,
+                                           patterns = c('WW', 'SS'), #c("AA", "TA", "CG", "GC"),
+                                           #seqOrder = zebrafishPromotersTSSflank$interquantileWidth
+                                            smoothingWindow = 3, color = c("red", "blue")
+  )
+  return(new.data.frame)
+
+}
+cage.early.genes.pgc <- subset.cage.object(cage.anno.prim, up.pgc.high, cage.anno.high)
+cage.early.genes.soma <- subset.cage.object(cage.anno.prim.soma, up.pgc.high, cage.anno.high.soma)
+
+## plot density of difference between maternal and zygotic dominant peak position
+plot.histogram <- function(x,y){
+  frame.pgc <- data.frame(difference = x$difference)
+  frame.soma <- data.frame(difference = y$difference)
+  frame.pgc$class <- 'pgc'
+  frame.soma$class <- 'soma'
+  frame <- rbind(frame.pgc, frame.soma)
+
+  custom.hist <- function(x, y){
+    ggplot(x, aes(difference, fill = class)) + geom_density(alpha = 0.2)
+  
+  }
+custom.hist(frame)
+}
+
+plot.histogram(cage.early.genes.pgc, cage.early.genes.soma)
+end.rcode-->
+
+
+<!--begin.rcode eval = FALSE
+library(CAGEr)
+library(GenomicRanges)
+library(GenomicFeatures)
+library(ChIPseeker)
+library(ChIPpeakAnno)
+library(dplyr)
+library(biomaRt)
+library(seqPattern)
+library(BSgenome.Drerio.UCSC.danRer7)
+
+
+## the perfect CAGE object
+
+## Step 1:
+## generate data.frame with promoter attributes
+## This makes a promoter list that will be merged with TSSs from samples in Step 2 to find promoter sequences
+get.promoter.info <- function (mart) {
+  ## biomart attributes
+  gene.features <- getBM(attributes = c("ensembl_gene_id",  "ensembl_transcript_id","external_gene_name", "chromosome_name",
+                                        "transcript_start",  "transcript_end", "strand","gene_biotype"),mart = mart)
+  gene.features <- gene.features[gene.features$gene_biotype == "protein_coding",] 
+  
+  gene.features$strand <- ifelse(gene.features$strand==1, "+",  ifelse(gene.features$strand==-1, "-", "*")) 
+  
+  gene.features.range <- makeGRangesFromDataFrame(gene.features,
+                                                  start.field = "transcript_start",
+                                                  end.field = "transcript_end",
+                                                  keep.extra.columns = TRUE)
+  seqlevelsStyle(gene.features.range) <- "UCSC" ## gene.features will have numbers as seqlevels
+  
+  #make promoters with total width (-upstream, downstream) to use for CAGE clustering
+  promoters.mouse <- promoters(gene.features.range,upstream = 500, downstream = 500)
+  promoters.frame <- GenomicRanges::as.data.frame(promoters.mouse)
+  names(promoters.frame)[1] <- "chr"
+  
+  # select only unique promoters for each gene - there can be multiple promoters
+  # from different transcripts, but they should not have the same start and end
+  promoters.frame <- promoters.frame[order(promoters.frame$chr,
+                                           promoters.frame$start,
+                                           promoters.frame$strand,
+                                           promoters.frame$ensembl_gene_id),]
+  promoters.frame <- promoters.frame[!duplicated(promoters.frame[c("chr", "start", "strand")]),] # discards lines duplicated in chr, start and end
+}
+
+## run function
+  mart <- useMart(host='mar2015.archive.ensembl.org',
+                          biomart='ENSEMBL_MART_ENSEMBL',
+                          dataset = "drerio_gene_ensembl")
+
+promoters_df <- get.promoter.info(mart)
+
+## Step 2:
+## create a tag cluster data.frame from any CAGE object
+
+setwd('/Users/fdorazio/Desktop/Postdoc/Data_Analysis/CAGEsets/')
+myCAGEset <- readRDS('CAGEset_PGC_soma_Early_Late.rds')
+tagcluster.frame <- tagClusters(myCAGEset)
+
+## combine promoter features and CAGE tagclusters
+## keep one/multiple transcripts per gene
+
+## annotate cage tag clusters 
+## dyplr required!
+sample.names <- unname(sampleLabels(myCAGEset))
+iqs <- lapply(sample.names, function(x){
+  tc <- tagClusters(myCAGEset, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+  tc <- tc[tc$chr %in% paste("chr",1:25, sep = ""),]
+  tc$sampleID = x
+  return(tc)
+})
+
+iqs_PGC <- iqs[c(1,3)] ## subset only early and late PGCs
+iqs_earlyPGC <- GRanges(as.data.frame(iqs_PGC[1]))
+iqs_latePGC <- GRanges(as.data.frame(iqs_PGC[2]))
+
+## combine in all samples in a unique data frame
+iqs_gg <- bind_rows(iqs)
+
+tc_gr <- makeGRangesFromDataFrame(iqs_gg, keep.extra.columns = TRUE)
+## subset promoter peaks (merge it with promoters_df)
+promoters.range <- GRanges(promoters_df)
+iqs_gg.range <- GRanges(iqs_gg)
+iqs_gg_promoters <- subsetByOverlaps(iqs_gg.range, promoters.range)
+
+subset_granges_for_shift <- function(x,y){
+  x <- resize(x,fix='center', width=width(x)+10)
+  y <- resize(y, fix='center', width=width(y)+10)
+  ov.late <- findOverlaps(x, y) ## finds overlaps and link each query in grange1 to each in grange2 
+  x[queryHits(ov.late),] 
+  ov.late <- y[subjectHits(ov.late),]
+  ov.late <- data.frame(ov.late)
+  colnames(ov.late) <- paste0(colnames(ov.late), '_late')
+  
+  ov.early <- findOverlaps(y, x) 
+  y[queryHits(ov.early),]
+  ov.early <- x[subjectHits(ov.early),]
+  ov.early <- data.frame(ov.early)
+  
+  merged.late.early.frame <- cbind(ov.early, ov.late)
+  merged.late.early.frame <- subset(merged.late.early.frame,
+                                    merged.late.early.frame$tpm.dominant_ctss_late > 1 | 
+                                      merged.late.early.frame$tpm.dominant_ctss > 1)
+  merged.late.early <- GRanges(merged.late.early.frame)
+
+}
+
+cage.PGC.merged <- subset_granges_for_shift(iqs_earlyPGC, iqs_latePGC)
+
+## tx annotation
+txdb <- loadDb('~/Desktop/Postdoc/Data_Analysis/annotation/txdb_DanRer7.sqlite')
+## merge early and late by granges overlap and annotate tag clusters
+cage.pipe.tbp2 <- function(x, genome = 'org.Dr.eg.db'){
+  cage.peak <- annotatePeak(x, tssRegion = c(-500, 500), TxDb = txdb,
+                            annoDb = genome, sameStrand = T, verbose = F)
+  cage.frame <- data.frame(cage.peak@anno)
+  cage.frame <- subset(cage.frame, cage.frame$distanceToTSS < 500 & cage.frame$distanceToTSS > -500)
+  
+  return(cage.frame)
+}
+## requires cage.pipe.tbp2 function
+cage.PGC.merged <- cage.pipe.tbp2(cage.PGC.merged)
+
+### another approach to annotate peaks
+## Step 3:
+## subset PGC and somatic CAGE promoter peaks 
+early.pgc <- subset(iqs_gg_promoters, iqs_gg_promoters$sampleID == 'PGC_high_r1_1_S1_L001_R1')
+late.pgc <- subset(iqs_gg_promoters, iqs_gg_promoters$sampleID == 'PGC_prim5_r4_1_S5')
+early.soma <- subset(iqs_gg_promoters, iqs_gg_promoters$sampleID == 'soma_high_r1_1_S2')
+late.soma <- subset(iqs_gg_promoters, iqs_gg_promoters$sampleID == 'soma_prim5_r4_1_S6')
+
+subset.cage.sample <- function(x,y){
+  x <- resize(x,fix='center', width=width(x)+50)
+  y <- resize(y, fix='center', width=width(y)+50)
+  ov.late <- findOverlaps(x, y) 
+  x[queryHits(ov.late),]
+  ov.late <- y[subjectHits(ov.late),]
+  ov.late <- data.frame(ov.late)
+  colnames(ov.late) <- paste0(colnames(ov.late), '_late')
+  
+  ov.early <- findOverlaps(y, x) 
+  y[queryHits(ov.early),]
+  ov.early <- x[subjectHits(ov.early),]
+  ov.early <- data.frame(ov.early)
+  ## do not rename the columns to allow granges to find the coordinates
+  
+
+  merged.late.early.frame <- cbind(ov.early, ov.late)
+  merged.late.early <- GRanges(merged.late.early.frame)
+  
+  ## annotate peaks
+  ## requires cage.pipe function
+  cage.anno <- cage.pipe.tbp2(merged.late.early, 'org.Dr.eg.db')
+  cage.anno <- subset(cage.anno, cage.anno$tpm.dominant_ctss > 3 & cage.anno$tpm.dominant_ctss_late > 3)
+  cage.anno$difference <- cage.anno$dominant_ctss_late - cage.anno$dominant_ctss
+  ##change the sign based on strand
+  cage.anno <- GRanges(cage.anno)
+  cage.anno$difference[(as.character(strand(cage.anno)) == '-')] <- -cage.anno$difference[(as.character(strand(cage.anno)) == '-')]
+  cage.anno <- data.frame(cage.anno)
+  
+  return(cage.anno)
+}
+
+cage.anno.pgc <- subset.cage.sample(early.pgc, late.pgc)
+cage.anno.soma <- subset.cage.sample(early.soma, late.soma)
+
+## gene ontology for genes that do not change in promoter usage in the PGCs
+cage.anno.no.diff <- subset(cage.anno.pgc, cage.anno.pgc$difference == 0)
+ego <- enrichGO(cage.anno.no.diff$ENSEMBL, OrgDb = org.Dr.eg.db,
+                keyType = 'ENSEMBL', ont = 'BP', pvalueCutoff = 0.1, universe = cage.anno.pgc$ENSEMBL)
+dotplot(ego, showCategory = 25, font.size = 8)
+
+## step 4:
+## get raw reads from rnaseq
+## subset gene classes based on expression
+## subset the cage object
+setwd('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/perGeneCounts_Stages/')
+
+files <- list.files(pattern = '\\.tab')
+
+## creating a function which reads a csv file and make a matrix
+readTagsPerGene <- function(x){
+  out <- read.csv(x, skip = 4, header = FALSE, sep = "\t", row.names = 1,
+                  col.names = c("","totalCount", "forwardCount", "reverseCount"))
+  out
+}
+
+
+allReadsCounts <- lapply(files, readTagsPerGene)
+head(allReadsCounts[[1]])
+
+totalReadsCount <- sapply(allReadsCounts, function(x) x$totalCount) # makes a matrix with the values from the totalCount column
+rownames(totalReadsCount) <- row.names(allReadsCounts[[1]])
+colnames(totalReadsCount) <- c('s256PGC1', 's256Soma1', 's256PGC2', 's256Soma2', 'sHighPGC1', 'sHighSoma1', 'sHighPGC2', 'sHighSoma2',  'sDomePGC1', 'sDomeSoma1', 'sDomePGC2', 'sDomeSoma2', 's10somitesPGC1', 's10somitesSoma1', 's10somitesPGC2', 's10somitesSoma2', 'sPrim5PGC1', 'sPrim5Soma1', 'sPrim5PGC2', 'sPrim5Soma2', 'Tdrd7pgcMO1', 'Tdrd7somaMO1', 'Tdrd7pgcMO2', 'Tdrd7somaMO2', 'Tdrd7pgc5mm1', 'Tdrd7soma5mm1', 'Tdrd7pgc5mm2', 'Tdrd7soma5mm2')
+totalReadsCount <- totalReadsCount[,c(1:20)]
+
+## get gene lists
+setwd('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/')
+
+library(DESeq2)
+
+coldata <- data.frame(stage = c('early', 'early', 'late', 'late'))
+somatic.zygotic <- totalReadsCount[,c(2,4,18,20)]
+
+run.deseq.genes <- function(x, coldata, stages = 'early'){
+  coldata <- coldata
+  rownames(coldata) <- colnames(x)
+  dds <- DESeqDataSetFromMatrix(countData = x, colData = coldata, design = ~ stage)
+  dds <- DESeq(dds)
+  
+  res <- results(dds) 
+  if(stages == 'early'){
+    upreg <- subset(res, res$log2FoldChange > 1 & res$padj < 0.05)
+  }
+  else{
+    upreg <- subset(res, res$log2FoldChange < -1 & res$padj < 0.05)
+  }
+  upreg <- data.frame(upreg)
+  return(upreg)
+}
+
+somatic.zygotic.res <- run.deseq.genes(somatic.zygotic, coldata)
+list.somatic.zygotic <- rownames(somatic.zygotic.res)
+
+## pgc late genes
+pgc.zygotic <- totalReadsCount[,c(1,3,17,19)]
+pgc.zygotic.res <- run.deseq.genes(pgc.zygotic, coldata)
+list.pgc.zygotic <- rownames(pgc.zygotic.res)
+
+
+## germ plasm genes
+early.germ.cells <- totalReadsCount[,c(1:4)]
+coldata <- data.frame(stage = c('PGC', 'Soma', 'PGC', 'Soma'))
+germ.plasm <- run.deseq.genes(early.germ.cells, coldata, stages = 'late')
+germ.plasm <- data.frame(germ.plasm)
+
+## oocyte genes 
+## select those whose tpm is higher than 20 in the pre-MBT stage
+tpm <- read.csv('tpmStagesFiltered.txt', sep = '\t')
+tpm$MeanEarly <- rowMeans(tpm[c('s256PGC1', 's256PGC2', 's256Soma1', 's256Soma2')],)
+tpm.oocyte <- subset(tpm, tpm$MeanEarly > 20)
+tpm.oocyte <- data.frame(row.names = rownames(tpm.oocyte), tpm.oocyte$MeanEarly)
+
+## shifting promoters in Haberle et al.
+setwd('~/Desktop/PhD-March-2019-backup/datasets/')
+shifting.promoters <- read.csv('shiftingPromotersMZT.txt', sep = '\t')
+shifting.promoters <- na.omit(shifting.promoters)
+
+
+## GENES EXPRESSED IN OOCYTE AND LATE PGCS
+setwd('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/')
+upreg.insoma.late <- read.csv('UpregulatedInSomavsPGCatPrim5.txt', sep = '\t')
+upreg.inpgcs.late <- read.csv('UpregulatedGenesInPGCvsSomaPrim5.txt', sep = '\t', row.names = 1)
+tpm <- read.csv('tpmStagesFiltered.txt', sep = '\t')
+
+pgc.threshold.bigger.than.5 <- subset(upreg.inpgcs.late, upreg.inpgcs.late$log2FoldChange < -5)
+boxplot(log(tpm[pgc.names,c(1:8,17:20)]+1), color = 'lightblue')
+
+write.table(pgc.threshold.bigger.than.5.and.oocyte, '~/Desktop/Postdoc/Data_Analysis/Tables/PGC_Analysis/GenesUpregulatedInPGCandOocyteButNotInZygoticSoma.txt', sep = '\t')
+plot(as.matrix(median.tpm.normdata.oocyte)[c(1,3,5)], type = 'l', col = 'green')
+
+
+
+## SUBSET THE CAGE OBJECT
+## 1) only oocyte and pgc genes
+sample.names <- unname(sampleLabels(myCAGEset)[c(3,6)])
+
+## get coordinates for subset of genes from ENSEMBL IDs
+deseq.pgc.oocyte.coord <- merge(as.data.frame(txdb7), pgc.threshold.bigger.than.5, by = 0) %>%
+  mutate(cc_id = paste(seqnames,start,end,width,strand,sep = "_"))
+deseq.res.gr.pgc <- GRanges(seqnames = deseq.pgc.oocyte.coord$seqnames,
+                        ranges = IRanges(start = deseq.pgc.oocyte.coord$start,
+                                         end = deseq.pgc.oocyte.coord$end),
+                        strand = deseq.pgc.oocyte.coord$strand)
+values(deseq.res.gr.pgc) <- deseq.pgc.oocyte.coord[,7:ncol(deseq.pgc.oocyte.coord)]
+
+## annotate CAGE peaks and get coordinates
+tcs <- lapply(sample.names, function(x){
+  a <- tagClusters(myCAGEset, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+  a <- a[a$chr %in% paste("chr",1:25, sep = ""),]
+  a$sampleID <- x
+  a <- mutate(a, promoterID = paste(chr,start,end,strand, sep = "_"))
+  a <- annotatePeak(GRanges(a), TxDb=txdb, tssRegion=c(-1000, 100), verbose=FALSE, 
+                     sameStrand = TRUE)
+  gr <- a@anno
+  gr <- subset(gr, gr$annotation == 'Promoter')
+  return(gr)
+})
+names(tcs) <- sample.names
+
+
+### merge promoter tss with DEG class and logFoldChange
+tcs_res_pgc_oocyte <- purrr::map(tcs, function(x,y){
+  # determine all overlaps and have granges map to TC coordinates
+  hits <- findOverlaps(x,y)
+  x_sub <- x[queryHits(hits)]
+  y_sub <- y[subjectHits(hits)]
+  tc_deseq <- x_sub
+  values(tc_deseq) <- cbind(values(tc_deseq), values(y_sub))
+  # keep only highest:
+  df <- tbl_df(data.frame(promoterID = tc_deseq$promoterID,
+                          tpm = tc_deseq$tpm,
+                          cc_id = tc_deseq$cc_id)) %>%
+    group_by(cc_id) %>%
+    dplyr::slice(which.max(tpm))
+  # select only these promoterIDs
+  sel <- which(tc_deseq$promoterID %in% df$promoterID & tc_deseq$cc_id %in% df$cc_id)	
+  return(tc_deseq[sel])
+}, y = deseq.res.gr.pgc)
+names(tcs_res) <- c(sample.names)
+
+## most of PGC and oocyte upreg genes dont have CAGE tags
+## save those that dont have a CAGE tag
+up.no.prom <- subsetByOverlaps(GRanges(deseq.pgc.oocyte.coord), tcs_res_pgc_oocyte[[1]], invert = T)
+saveRDS(up.no.prom, '~/Desktop/Postdoc/Data_Analysis/Tables/PGC_Analysis/GenesUpregInPGCandOocyte_NoTSSinCAGE.rds')
+
+## 2)shifting promoters
+frame.shifting.promoters <- data.frame(row.names = shifting.promoters$ensembl_gene_id)
+deseq.shift.coord <- merge(as.data.frame(txdb7), frame.shifting.promoters, by = 0) %>%
+  mutate(cc_id = paste(seqnames,start,end,width,strand,sep = "_"))
+deseq.res.gr.shift <- GRanges(seqnames = deseq.shift.coord$seqnames,
+                        ranges = IRanges(start = deseq.shift.coord$start,
+                                         end = deseq.shift.coord$end),
+                        strand = deseq.shift.coord$strand)
+deseq.res.gr.shift$cc_id <- deseq.shift.coord[,7:ncol(deseq.shift.coord)]
+
+## get promoters for early genes
+sample.names.somatic <- unname(myCAGEset@sampleLabels[c(4,6)])
+
+tcs.somatic <- lapply(sample.names.somatic, function(x){
+  a <- tagClusters(myCAGEset, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+  a <- a[a$chr %in% paste("chr",1:25, sep = ""),]
+  a$sampleID <- x
+  a <- mutate(a, promoterID = paste(chr,start,end,strand, sep = "_"))
+  a <- annotatePeak(GRanges(a), TxDb=txdb, tssRegion=c(-1000, 100), verbose=FALSE, 
+                     sameStrand = TRUE)
+  gr <- a@anno
+  gr <- subset(gr, gr$annotation == 'Promoter')
+  return(gr)
+})
+names(tcs.somatic) <- sample.names.somatic
+
+
+### merge promoter tss with DEG class and logFoldChange
+tcs_res_shifting <- purrr::map(tcs.somatic, function(x,y){
+  # determine all overlaps and have granges map to TC coordinates
+  hits <- findOverlaps(x,y)
+  x_sub <- x[queryHits(hits)]
+  y_sub <- y[subjectHits(hits)]
+  tc_deseq <- x_sub
+  values(tc_deseq) <- cbind(values(tc_deseq), values(y_sub))
+  # keep only highest:
+  df <- tbl_df(data.frame(promoterID = tc_deseq$promoterID,
+                          tpm = tc_deseq$tpm,
+                          cc_id = tc_deseq$cc_id)) %>%
+    group_by(cc_id) %>%
+    dplyr::slice(which.max(tpm))
+  # select only these promoterIDs
+  sel <- which(tc_deseq$promoterID %in% df$promoterID & tc_deseq$cc_id %in% df$cc_id)	
+  return(tc_deseq[sel])
+}, y = deseq.res.gr.shift)
+
+## % of match with PWM for TBP
+data("TBPpwm")
+library(BSgenome.Drerio.UCSC.danRer7)
+
+perc.TBPPWM <- function(x){
+  x <- data.frame(x)
+  rangePWM <- GRanges(seqnames = x$seqnames, IRanges(start = x$dominant_ctss, end = x$dominant_ctss), strand = x$strand, interquantile_width = x$interquantile_width, seqlengths = seqlengths(Drerio))
+  zebrafishPromotersTSSflank <- promoters(rangePWM, upstream = 50,
+                                          downstream = 0)
+
+  ## get 6bp up and 6bp downstream the TATAbox (-35, -23) to include the TATA region
+  #zebrafishPromotersTSSflank <- resize(zebrafishPromotersTSSflank, width = 12, fix = 'center')
+  zebrafishPromotersTSSflankSeq <- getSeq(Drerio, zebrafishPromotersTSSflank)
+  motifOccurrence <- motifScanScores(regionsSeq =
+                                     zebrafishPromotersTSSflankSeq,
+                                     motifPWM = TBPpwm)
+  return(motifOccurrence)
+}
+
+scan.scores.shifting <- lapply(tcs_res_shifting, perc.TBPPWM)
+scan.scores.pgc.oocyte <- lapply(tcs_res_pgc_oocyte, perc.TBPPWM)
+
+## plot histogram
+library(ggplot2)
+
+overlap.histograms <- function(x,y){
+  x <- data.frame(x)
+  x$Mean <- apply(x, 1, mean)
+  y <- data.frame(y)
+  y$Mean <- apply(y, 1, mean)
+  data.frame1 <- data.frame(values = x$Mean, hist = 'hist1')
+  data.frame2 <- data.frame(values = y$Mean, hist = 'hist2')
+
+  data.frame.final <- rbind(data.frame1, data.frame2)
+  return(data.frame.final)
+}
+
+data.frame.shift <- overlap.histograms(scan.scores.shifting[[1]], scan.scores.shifting[[2]])
+data.frame.pgc.oocyte <- overlap.histograms(scan.scores.pgc.oocyte[[1]], scan.scores.shifting[[2]])
+data.frame.pgc.early <- overlap.histograms(scan.scores.shifting[[1]], scan.scores.pgc.oocyte[[1]])
+
+## plot 
+ggplot(data.frame.shift, aes(values, fill = hist)) + 
+geom_histogram(alpha = 0.5, aes(y = ..density..), position = 'identity') + theme_bw() + 
+  scale_fill_manual(values=c("lightblue", "purple"))
+
+ggplot(data.frame.pgc.oocyte, aes(values, fill = hist)) + 
+geom_histogram(alpha = 0.5, aes(y = ..density..), position = 'identity') + theme_bw() + 
+  geom_density(aes(color = hist), alpha = .1) + 
+  scale_color_manual(values=c("darkcyan", "purple")) +
+  scale_fill_manual(values=c("darkcyan", "purple"))
+
+ggplot(data.frame.pgc.early, aes(values, fill = hist)) + 
+geom_histogram(alpha = 0.5, aes(y = ..density..), position = 'identity') + theme_bw() + 
+  geom_density(aes(color = hist), alpha = .1) +
+  scale_fill_manual(values=c("deepskyblue", "darkcyan")) + scale_color_manual(values=c("deepskyblue", "darkcyan")) 
+
+
+
+
+end.rcode-->
+
+
+<h2> Figure 5 </h2>
+
+<p> <b> Analysis of Pentamers </b> </p>
+<p> In order to check if TATA-like promoters are bound by the same TF in PGCs and somatic cells, analysis of pentamers was performed. It is known that TBP strongly binds canonical TATA sequences (TATAA), while the germ line TF, TBP2, has a less stringent preference and can bind any WWWWW promoter. </p>
+<p> The sequence between -40 and -20 from every TSS was scanned for every possible WWWWW pentamer combination and the relative occurrence of the motif was calculated. </p>
+<!--begin.rcode eval = FALSE
+### analysis of pentamers
+library(seqPattern)
+library(purrr)
+library(dplyr)
+library(GenomicFeatures)
+library(ChIPpeakAnno)
+
+## load cage data
+myCAGEset <- readRDS("~/Desktop/Postdoc/Data_Analysis/CAGEsets/CAGEset_PGC_soma_Early_Late.rds")
+# sample names for downstream analyses  
+sample.names <- unname(sampleLabels(myCAGEset)[c(3,6)])
+
+## load diff expressed genes and get the promoter coordinates
+deseq.up.pgc <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/UpregulatedGenesInPGCvsSomaPrim5.txt', sep = '\t')
+deseq.up.soma <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/UpregulatedInSomavsPGCatPrim5.txt', sep = '\t')
+## load non significant DEG
+ns.genes <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/DEGbetweenPGCandSomaAtPrim5_positiveisPGC_negativeisSoma.txt', sep = '\t', row.names = NULL)
+colnames(ns.genes)[1] <- 'X'
+ns.genes <- na.omit(ns.genes)
+deseq.ns <- subset(ns.genes, ns.genes$padj > 0.11)
+
+## load maternal genes
+maternal.zygotic.genes <- read.csv('~/Desktop/PhD-March-2019-backup/FabioRNAseq (2)/2108/RNAseqtables/DEGbetweenSoma256andPrim5_positiveis256_negativeisPrim.txt', sep = '\t', row.names = NULL)
+
+##maternal vs zygotic
+maternal.genes <- subset(maternal.zygotic.genes, maternal.zygotic.genes$log2FoldChange > 0 & maternal.zygotic.genes$padj < 0.1)
+zygotic.genes <- subset(maternal.zygotic.genes, maternal.zygotic.genes$log2FoldChange < 0 & maternal.zygotic.genes$padj < 0.1)
+
+## add class column for DE
+deseq.up.pgc$de_group <- 'PGC_up'
+deseq.up.soma$de_group <- 'Soma_up'
+deseq.ns$de_group <- 'NS'
+## bind the two frames
+deseq.results <- bind_rows(deseq.up.pgc,deseq.up.soma)
+deseq.results.ns <- bind_rows(deseq.results, deseq.ns)
+##maternal vs zygotic
+deseq.results.zyg <- bind_rows(maternal.genes, zygotic.genes)
+## use high and soma prim promoters
+sample.names <- unname(sampleLabels(myCAGEset)[c(4,6)])
+
+rownames(deseq.results) <- deseq.results$X
+deseq.results$X <- NULL
+
+TxDb.danRer7.ENSEMBL <- makeTxDbFromBiomart(biomart = 'ENSEMBL_MART_ENSEMBL',
+                                            dataset='drerio_gene_ensembl',
+                                            host = 'http://mar2015.archive.ensembl.org')
+txdb7 <- toGRanges(TxDb.danRer7.ENSEMBL)
+seqlevelsStyle(txdb7) <- 'UCSC'
+
+## merge deseq table with gene coordinates
+## matches DGE class and logFoldChange with gene coordinates
+deseq.coordinates <- merge(as.data.frame(txdb7), deseq.results, by = 0) %>%
+	mutate(cc_id = paste(seqnames,start,end,width,strand,sep = "_"))
+deseq.res.gr <- GRanges(seqnames = deseq.coordinates$seqnames,
+		    ranges = IRanges(start = deseq.coordinates$start,
+				     end = deseq.coordinates$end),
+		    strand = deseq.coordinates$strand)
+values(deseq.res.gr) <- deseq.coordinates[,7:ncol(deseq.coordinates)]
+## match tag clusters with DEG
+tcs <- lapply(sample.names, function(x){
+		    
+			  a <- tagClusters(myCAGEset, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+			  a <- a[a$chr %in% paste("chr",1:25, sep = ""),]
+			  a$sampleID <- x
+		      a <- mutate(a, promoterID = paste(chr,start,end,strand, sep = "_"))
+		      gr <- GRanges(seqnames = a$chr,
+				    ranges = IRanges(start = a$start,
+						     end = a$end),
+				    strand = a$strand, iq = a$interquantile_width)
+		      values(gr) <- a[,c(6:12,ncol(a))]
+		      return(gr)
+})
+names(tcs) <- sample.names
+
+### merge promoter tss with DEG class and logFoldChange
+tcs_res <- purrr::map(tcs, function(x,y){
+		       # determine all overlaps and have granges map to TC coordinates
+		       hits <- findOverlaps(x,y)
+		       x_sub <- x[queryHits(hits)]
+		       y_sub <- y[subjectHits(hits)]
+		       tc_deseq <- x_sub
+		       values(tc_deseq) <- cbind(values(tc_deseq), values(y_sub))
+		       # keep only highest:
+		       df <- tbl_df(data.frame(promoterID = tc_deseq$promoterID,
+					       tpm = tc_deseq$tpm,
+					       cc_id = tc_deseq$cc_id)) %>%
+		       		group_by(cc_id) %>%
+				dplyr::slice(which.max(tpm))
+			# select only these promoterIDs
+			sel <- which(tc_deseq$promoterID %in% df$promoterID & tc_deseq$cc_id %in% df$cc_id)	
+			return(tc_deseq[sel])
+}, y = deseq.res.gr)
+
+saveRDS(tcs_res, '../Tables/TSSofUpregulatedGenesInPGCandSoma.rds')
+## center to sample TCs to dominant TSS and extend 120 bp up and 50 downstream  
+# function
+center_on_tss <- function(x, up, down){
+	y <- x
+	ranges(y) <- IRanges(start = x$dominant_ctss, end = x$dominant_ctss)
+	y <- trim(promoters(y, upstream = range_extend[1], downstream = range_extend[2]))
+        return(y)}
+# execution
+range_extend <- c(120,50)
+tc_tss <- map(tcs_res, center_on_tss, up = range_extend[1], down = range_extend[2])
+names(tc_tss) <- sample.names
+
+## generate random pentamers with A and Ts
+library(tcR)
+pents <- generate.kmers(.k = 5, .alphabet = c("A","T"))
+
+## Get the numbers of matches for each pentamer
+# prerequisites
+library(BSgenome.Drerio.UCSC.danRer7)
+bs = BSgenome.Drerio.UCSC.danRer7
+# list of long dataframes
+pent_list <- list()
+for(i in seq_along(tc_tss)){
+	sample_name <- names(tc_tss)[i]
+	print(paste0("Analysing sample: ",sample_name, "..."))
+	tc_gr <- tc_tss[[i]]
+	# get seqs
+	tc.seq <- getSeq(bs,tc_gr)
+	wwbox <- lapply(pents, function(x){
+				message(paste0("Pattern matching to: ", x, ".."))
+				## calculate 100% match  score and sum for hit 
+				pat <- getPatternOccurrenceList(regionsSeq = tc.seq, patterns = x)[[1]]
+				# create empty matrix and fill in to select the right range
+				mat <- matrix(data = 0,
+					     nrow = length(tc.seq),
+					     ncol = width(tc.seq)[1])
+
+				mat[cbind(pat$sequence, pat$position)] <- pat$value
+				colnames(mat) <- paste0("pos_",1:ncol(mat))
+				rownames(mat) <- tc_gr$cc_id
+				## count occurences between -40 and -20 
+				# window to count (-120+80 = -40)
+				sel = 80:100
+				motif.df <- tbl_df(mat)[,sel]
+				motif.df$cc_id <- rownames(mat)
+				# bind the two frames
+				meta <- tbl_df(tc_gr) %>% mutate(sampleID = sample_name) 
+				info_motif <- inner_join(meta[,c("de_group","sampleID","cc_id")], motif.df, by = "cc_id")
+				# find the max per row (exclude first 3 columns)
+				one <- sapply(1:nrow(info_motif),function(y){ max(info_motif[y,-c(1:3)])})
+				# replace other columns
+				df <- cbind(info_motif[,1:3],tibble(motif = x,motif_value = one))
+				# return
+				return(df)
+})
+	pent_list[[i]] <- do.call(rbind, wwbox)
+}
+# all together
+penties <- do.call(rbind, pent_list)
+
+## make table for barplot
+library(tidyr)
+library(ggplot2)
+## divided by the number of promoters which have that occurrence
+bar_tab <- penties %>%
+	group_by(sampleID,de_group,motif) %>%
+	summarize(N = n(),
+		  motif_rel = sum(motif_value != 0)/N)
+# only three samples:
+bar_gg <- bar_tab[(bar_tab$sampleID == "PGC_prim5_r4_1_S5" & bar_tab$de_group == "PGC_up") | (bar_tab$sampleID == "soma_prim5_r4_1_S6" & bar_tab$de_group != "PGC_up"),]
+# ordering 
+or<- bar_gg %>%
+	ungroup() %>%
+	dplyr::select(de_group,motif,motif_rel) %>%
+	spread(de_group,motif_rel) %>%
+	group_by(motif) %>% 
+	mutate(diff = max(abs(diff(c(PGC_up, Soma_up))))) %>%
+	arrange(desc(diff))
+bar_gg$motif <- factor(bar_gg$motif, levels = rev(or$motif))
+
+## Plot
+# colours
+library(viridis)
+vallie <- sample(viridis(32))
+# orders
+bar_gg$de_group <- factor(bar_gg$de_group, levels = c("PGC_up","Soma_up"))
+p <- ggplot(bar_gg,aes(x = motif, y = motif_rel, fill = de_group)) +
+	geom_col() +
+	theme_classic() +
+	theme(legend.position = "none") +
+	scale_fill_manual(values = vallie) +
+	coord_flip() 
+pdf("../data/results/promArchitecture/TATAbox_pentamers_all_threeplots.pdf")
+print(p)
+dev.off()
+# first 10 most different
+vallie <- viridis(11) 
+names(vallie) <- sample(or$motif[1:11])
+# orders
+bar_gg$de_group <- factor(bar_gg$de_group, levels = c("green_up","red_up","non-significant"))
+# Plot
+p <- ggplot(bar_gg[bar_gg$motif %in% or$motif[1:11],],aes(x = motif, y = motif_rel, fill = motif)) +
+	geom_bar(stat = "identity",color = "white") +
+	theme_bw() +
+	theme(legend.position = "none") +
+	scale_fill_manual(values = vallie) +
+	coord_flip() +
+	facet_wrap(~de_group)
+pdf("../data/results/promArchitecture/WWbox_pentamers_top11_threeplots.pdf")
+print(p)
+dev.off()
+
+## different plot
+p <- ggplot(bar_gg,aes(x = motif, y = motif_rel, fill = de_group)) +
+geom_col(position = "dodge") + 	scale_fill_manual(values = c('green3', 'purple')) +
+theme_classic() + theme(axis.text.x = element_text(angle = 90))
+
+## plot NS
+bar_tab <- penties %>%
+	group_by(sampleID,de_group,motif) %>%
+	summarize(N = n(),
+		  motif_rel = sum(motif_value != 0)/N)
+# only three samples:
+bar_gg <- bar_tab[(bar_tab$sampleID == "PGC_prim5_r4_1_S5") | (bar_tab$sampleID == "soma_prim5_r4_1_S6"),]
+
+p <- ggplot(bar_gg,aes(x = motif, y = motif_rel, fill = sampleID)) +
+geom_col(position = "dodge") + 	scale_fill_manual(values = c('green3', 'purple')) +
+theme_classic() + theme(axis.text.x = element_text(angle = 90))
+## Fishers exact test
+# get ratios (pseudo count = 1)
+probs <- penties %>%
+	group_by(sampleID,de_group,motif) %>%
+	summarize(N = n(),
+		  rel_N = ifelse(sum(motif_value !=0) > 0,sum(motif_value != 0)/N,1/N),
+		  count_yes = sum(motif_value != 0),
+		  count_no = sum(motif_value == 0)) 
+
+
+### extract coordinates of promoters with matches
+## subset promoters with a match for the motif scan
+## extract the coordinates from the name
+library(tidyr)
+extract_coordinates <- function(x){
+  penties.all.occurrencies <- subset(x, x$motif_value > 0)
+penties.all.occurrencies <- penties.all.occurrencies %>% mutate(cc_id = gsub("\\_", " ", penties.all.occurrencies$cc_id))
+
+penties.all.occurrencies.plus <- penties.all.occurrencies[grep('+', penties.all.occurrencies$cc_id, fixed = TRUE),] %>% separate(cc_id, c('chr', 'start', 'end', 'tpm', 'b'))
+penties.all.occurrencies.plus$strand = '+'
+
+penties.all.occurrencies.minus <- penties.all.occurrencies[grep('-', penties.all.occurrencies$cc_id, fixed = TRUE),] %>% separate(cc_id, c('chr', 'start', 'end', 'tpm', 'b'))
+penties.all.occurrencies.minus$strand = '-'
+
+## rebind
+penties.all.occurrencies1 <- rbind(penties.all.occurrencies.minus, penties.all.occurrencies.plus)
+return(penties.all.occurrencies1)
+}
+## run function
+penties.all.occurrencies <- extract_coordinates(penties)
+
+## subset somatic promoters with a match for the motif scan
+pent.TATAA.somatic <- subset(penties.all.occurrencies, penties.all.occurrencies$sampleID == 'soma_prim5_r4_1_S6')
+pent.TATAA.somatic <- subset(pent.TATAA.somatic, pent.TATAA.somatic$motif == 'TATAA' | pent.TATAA.somatic$motif == 'ATATA' | pent.TATAA.somatic$motif == 'ATAAA' | pent.TATAA.somatic$motif == 'TAAAA')
+
+## subset PGC promoters with a match for the motif scan
+pent.TATAA.pgc <- subset(penties.all.occurrencies, penties.all.occurrencies$sampleID == 'PGC_prim5_r4_1_S5')
+pent.TATAA.pgc <- subset(pent.TATAA.pgc, pent.TATAA.pgc$motif == 'TTTTA' | pent.TATAA.pgc$motif == 'ATTTT' | pent.TATAA.pgc$motif == 'TTATT' | pent.TATAA.pgc$motif == 'TTTAT')
+
+## subset with tcs_res for the IQ widths and merge into a list
+## extract Interquartile width and select for sample-specific promoters
+tcs_res_resize.pgc <- subsetByOverlaps(tcs_res[[1]], GRanges(pent.TATAA.pgc))
+tcs_res_resize.pgc <- subset(tcs_res_resize.pgc, tcs_res_resize.pgc$de_group == 'PGC_up')
+tcs_res_resize.soma <- subsetByOverlaps(tcs_res[[2]], GRanges(pent.TATAA.somatic))
+tcs_res_resize.soma <- subset(tcs_res_resize.soma, tcs_res_resize.soma$de_group == 'Soma_up')
+list_pent_extract <- list(tcs_res_resize.pgc, tcs_res_resize.soma)
+saveRDS(list_pent_extract, '~/Desktop/Postdoc/Data_Analysis/Tables/PGC_CAGE/WWpromUpreg_PGCandSoma.rds')
+
+### plot heatmaps for TA and CG in promoter subsets
+resize_prom <- function(x){
+  x <- data.frame(x)
+  y <- GRanges(seqnames = x$seqnames, IRanges(start = x$dominant_ctss, end = x$dominant_ctss), strand = x$strand)
+  values(y) <- x[,6:ncol(x)]
+
+  resize.tc <- resize(y, 150, fix = 'center')
+  resize.tc <- resize.tc[order(resize.tc$interquantile_width),]
+  return(resize.tc)
+}
+tcs_res_resize <- lapply(list_pent_extract, resize_prom)
+names(tcs_res_resize) <- names(tcs_res)
+
+## plot chromatin accessibility via genomation
+## requires processed Tn5 cut sites for PGC and soma from ATACseq
+library(genomation)
+
+setwd('~/Desktop/Postdoc/Data_Analysis/ATACseq/')
+atac.fold.change.pgc <- readRDS('ATAC_FoldChange_PGC_5mm_rep2_resize1.rds')
+atac.fold.change.soma <- readRDS('ATAC_FoldChange_Soma_MO_rep1_resize1.rds')
+
+## chromatin accessibility of subset of genes
+sm.pgc <- ScoreMatrix(target = atac.fold.change.pgc, windows = tcs_res_resize[[1]], weight.col = 'score', strand.aware = T)
+sm.soma <- ScoreMatrix(target = atac.fold.change.soma, windows = tcs_res_resize[[2]], weight.col = 'score', strand.aware = T)
+
+sm.pgc.soma.genes <- ScoreMatrix(target = atac.fold.change.pgc, windows = tcs_res_resize[[2]], weight.col = 'score', strand.aware = T)
+sm.soma.pgc.genes <- ScoreMatrix(target = atac.fold.change.soma, windows = tcs_res_resize[[1]], weight.col = 'score', strand.aware = T)
+
+## plot mata profile
+library(dplyr)
+### ggplot meta
+df <- data.frame(cbind(colMeans(sm.pgc), colMeans(sm.soma)))
+colnames(df) <- c("PGC", "soma")
+
+## rescale average signal for plot
+library(scales)
+df.pgc.scale <- rescale(df$PGC, 0:1)
+df.soma.scale <- rescale(df$soma, 0:1)
+df$PGC <- df.pgc.scale
+df$soma <- df.soma.scale
+
+df.gg <- df %>% gather(Expression, Tn5CutSites, PGC:soma)
+df.gg$Index <- rep(c(-150:-1, 1:150), 2)
+
+ggplot(df.gg, aes(x=Index, y=Tn5CutSites, Group=factor(Expression))) +
+           geom_line(aes(colour=factor(Expression))) +
+           scale_colour_manual(values = c("darkcyan", "purple")) + ###7CAE00 ###F8766D +
+           geom_vline(xintercept=0, colour="grey", linetype="longdash") +
+           theme_classic() + theme(legend.position='none')
+
+## quantify signal for TBP-binding site
+PGC.signal <- subset(df.gg, df.gg$Expression == 'PGC')
+PGC.signal <- PGC.signal[c(110:140),]
+PGC.signal$NormalizedTn5 <- PGC.signal$Tn5CutSites/max(PGC.signal$Tn5CutSites)
+
+soma.signal <- subset(df.gg, df.gg$Expression == 'soma')
+soma.signal <- soma.signal[c(110:140),]
+soma.signal$NormalizedTn5 <- soma.signal$Tn5CutSites/max(soma.signal$Tn5CutSites)
+
+boxplot(PGC.signal$NormalizedTn5, soma.signal$NormalizedTn5)
+## get dinucleotid frequencies
+y <- dinucleotideFrequency(pgc.prom.seq)
+z <- dinucleotideFrequency(soma.prom.seq)
+barplot(apply(y, 2, mean), cex.names = 0.7)
+barplot(apply(z, 2, mean), cex.names = 0.7)
+
+out.name <- 'PGCCAGE'
+
+for(i in 1:length(tcs_res_resize)){
+	seqs.tc <- getSeq(BSgenome.Drerio.UCSC.danRer7, tcs_res_resize[[i]])
+	s.name <- names(tcs_res_resize)[i]
+	# patterns
+	pat <- c("TATAA","TA", "WW","CG")
+	pats <- lapply(pat, function(x){ PatternHeatmap(seqs.tc, x, coords = c(-150,150))})
+	patsmooth <- lapply(pats, function(x){ smoothHeatmap(x, output.size=c(1000, 800), sigma = c(1, 3), algorithm="kernel")})
+	# save
+	png(paste0("/Users/fdorazio/Desktop/Postdoc/Data_Analysis/CAGEsets/PGC/heatmap_Subset",out.name,"_",s.name,".png"), height=20, width=40, units="cm", res=150)
+	if(s.name == 'PGC_prim5_r4_1_S5'){
+	  plotHeatmapList(patsmooth, groups=1:4, color=list("BuGn","BuGn","BuGn","BuGn"))
+	}
+	else{
+	  plotHeatmapList(patsmooth, groups=1:4, color=list("Purples","Purples","Purples","Purples"))
+	}
+	
+	dev.off()
+}
+
+## plot meta
+x <- getSeq(BSgenome.Drerio.UCSC.danRer7, tcs_res_resize[[1]])
+y <- getSeq(BSgenome.Drerio.UCSC.danRer7, tcs_res_resize[[2]])
+plotPatternOccurrenceAverage(x, patterns = 'CG', color = 'darkcyan')
+plotPatternOccurrenceAverage(y, patterns = 'CG', color = 'purple')
+
+## overlap with predicted CpG island
+cpg_island <- import.bed('~/Desktop/Postdoc/Data_Analysis/CpG.prediction.Christopher.UCSC.track.bed')
+cpg.pgc <- subsetByOverlaps(tcs_res_resize[[1]], cpg_island)
+cpg.soma <- subsetByOverlaps(tcs_res_resize[[2]], cpg_island)
+
+### chromatin heatmaps
+#### PLOT HEATMAPS FOR PROMOTER CHROMATIN ACCESSIBILITY ####
+library(GenomicAlignments)
+library(genomation)
+library(dplyr)
+library(heatmaps)
+
+## load CAGE set
+list_pent_new <- readRDS('~/Desktop/Postdoc/Data_Analysis/Tables/PGC_CAGE/WWpromUpreg_PGCandSoma.rds')
+
+resize_prom_heatmap <- function(x){
+  x <- data.frame(x)
+  y <- GRanges(seqnames = x$seqnames, IRanges(start = x$dominant_ctss, end = x$dominant_ctss), strand = x$strand)
+  values(y) <- x[,6:ncol(x)]
+  resize.tc <- resize(y, 200, fix = 'center')
+  resize.tc <- resize.tc[order(resize.tc$interquantile_width),]
+  return(resize.tc)
+}
+tcs_res_resize_new <- lapply(list_pent_new, resize_prom_heatmap)
+names(tcs_res_resize_new) <- names(tcs_res)
+
+coords=c(-100, 100)
+ATAC_heatmap_pgc = CoverageHeatmap(
+    tcs_res_resize_new[[1]],
+    atac.fold.change.pgc,
+    weight = log(atac.fold.change.pgc$score+1),
+    coords=coords)
+ATAC_heatmap_pgc_smooth <- smoothHeatmap(ATAC_heatmap_pgc, sigma = c(2,4))
+plotHeatmapList(ATAC_heatmap_pgc_smooth, cex.label=1, color = 'BuGn')
+
+## somatic profile on pgc genes
+ATAC_heatmap_soma = CoverageHeatmap(
+    tcs_res_resize_new[[1]],
+    atac.fold.change.soma,
+    weight = log(atac.fold.change.soma$score+1),
+    coords=coords)
+ATAC_heatmap_soma_smooth <- smoothHeatmap(ATAC_heatmap_soma, sigma = c(2,4))
+plotHeatmapList(ATAC_heatmap_soma_smooth, cex.label=1, color="Purples")
+
+## plot heatmap for all promoters
+setwd('~/Desktop/Postdoc/Data_Analysis/CAGEsets/')
+cageset.promoters <- readRDS('CAGEset_PGC_soma_Early_Late.rds')
+
+.promoter.width <- function(x, width = 1500){
+  pgc.promoters <- tagClusters(cageset.promoters, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+  pgc.promoters <- pgc.promoters[order(pgc.promoters$interquantile_width),]
+
+  pgc.promoters.range <- GRanges(seqnames = pgc.promoters$chr, IRanges(start = pgc.promoters$dominant_ctss, end = pgc.promoters$dominant_ctss), strand = pgc.promoters$strand)
+  pgc.promoters.range <- resize(pgc.promoters.range, width, fix = 'center')
+  return(pgc.promoters.range)
+}
+pgc.promoters.200 <- .promoter.width("PGC_prim5_r4_1_S5", 800)
+soma.promoters.200 <- .promoter.width("soma_prim5_r4_1_S6", 800)
+
+coords=c(-400, 400)
+ATAC_heatmap_all = CoverageHeatmap(
+    pgc.promoters.200,
+    atac.fold.change.pgc,
+    weight = log(atac.fold.change.pgc$score+1),
+    coords=coords)
+ATAC_heatmap.all_smooth <- smoothHeatmap(ATAC_heatmap.all, sigma = c(2,5))
+plotHeatmapList(ATAC_heatmap.all_smooth, cex.label=1)
+
+end.rcode-->
+
+<h2>Enhancer analysis</h2>
+<p>Enhancers are featured by bidirectional transcription away from annotated promoters. The package CAGEfightR uses this feature for identifying putative enhancers. It requires stranded bw files that were previously manually created</p>
+
+<!--begin.rcode eval = FALSE
+### Import mapped CAGE bams and converts them to big wigs
+
+library(GenomicAlignments)
+library(GenomicRanges)
+library(rtracklayer)
+
+setwd("/mnt/biggles/csc_projects/dunja/PGC_Fabio/newRun/")
+files <- list.files(pattern = '\\.sorted.bam$')
+## use   coverage.range <- keepSeqlevels(coverage.range, c(1:25), pruning.mode = 'coarse') for zebrafish development samples
+save.path <- '~/CAGE_PGC_BED/'
+chr <- paste0('chr', c(1:25))
+
+readAlignBAMplus <- function(x){
+  
+  alignment = readGAlignments(file = x)
+  grange <- GRanges(alignment)
+  grange.plus <- grange[grange@strand == '+']
+  coverage <- coverage(grange.plus)
+  coverage.range <- GRanges(coverage)
+  coverage.range <- resize(coverage.range, 1, fix = 'start')
+  levels(coverage.range@strand) <- c('+', '+', '+')
+  
+  coverage.range <- keepSeqlevels(coverage.range, chr, pruning.mode = 'coarse')
+  #chr <- paste0('chr', c(1:25))
+  #seqlevels(coverage.range) <- chr
+  
+  export.bw(object = coverage.range, con=paste0(save.path, x, '.plus.bw'))
+  
+}
+  
+
+readAlignBAMminus <- function(x){
+  
+  alignment = readGAlignments(file = x)
+  grange <- GRanges(alignment)
+  grange.plus <- grange[grange@strand == '-']
+  coverage <- coverage(grange.plus)
+  coverage.range <- GRanges(coverage)
+  coverage.range <- resize(coverage.range, 1, fix = 'start')
+  levels(coverage.range@strand) <- c('-', '-', '-')
+  
+  coverage.range <- keepSeqlevels(coverage.range, chr, pruning.mode = 'coarse')
+  seqlevels(coverage.range) <- chr
+  
+  export.bw(object = coverage.range, con=paste0(save.path, x,'.minus.bw'))
+  
+}
+
+
+lapply(files, readAlignBAMplus)
+lapply(files, readAlignBAMminus)
+
+end.rcode-->
+
+<h2> Not included in Figures </h2>
+<p>Core code for Enhancer analysis</p>
+
+<!--begin.rcode eval = FALSE
+#### ENHANCERS ANALYSIS
+library(CAGEfightR)
+library(GenomicRanges)
+library(GenomicFeatures) ## for makeTxdbFromBiomart
+library(rtracklayer) ## for SeqInfoFromUCSC
+library(TxDb.Drerio.UCSC.danRer10.refGene)
+library(BSgenome.Drerio.UCSC.danRer7)
+library(ChIPpeakAnno)
+library(ChIPseeker)
+
+## http://www.ensembl.org/info/website/archives/assembly.html
+mart <- useMart(host='dec2017.archive.ensembl.org', ## ensembl91 for danRer10
+                biomart='ENSEMBL_MART_ENSEMBL',
+                dataset = "drerio_gene_ensembl")
+
+### use CAGEfightR to detect biderectional transcripts
+
+setwd('~/Desktop/Postdoc/Data_Analysis/CAGEsets/PGC/CAGE_PGC_BED/')
+names1 <- unique(sapply(strsplit(list.files(), "\\."),'[', 1))
+
+## creating a function which reads a csv file and make a matrix
+BidirectionalPromoters <- function(x){
+  list.plus.files <- list.files(pattern = "\\plus.bw$")
+  staged.file.plus <- list.plus.files[grep(x,list.plus.files)]
+  bw_plus <- BigWigFileList(staged.file.plus)
+  list.minus.files <- list.files(pattern = "\\minus.bw$")
+  staged.file.minus <- list.minus.files[grep(x,list.minus.files)]
+  bw_minus <- BigWigFileList(staged.file.minus)
+
+  genomeInfo <- SeqinfoForUCSCGenome("danRer7")
+  DesignZebrafish <- data.frame(row.names = x, Name = x,
+                              BigWigPlus = staged.file.plus,
+                              BigWigMinus = staged.file.minus)
+
+  names(bw_plus) <- DesignZebrafish$Name
+  names(bw_minus) <- DesignZebrafish$Name
+
+## call TSSs
+
+  CTSSs <- quantifyCTSSs(plusStrand=bw_plus,
+                       minusStrand=bw_minus,
+                       design=DesignZebrafish,
+                       genome=genomeInfo)
+  ZebCTSSs <- calcTotalTags(CTSSs, 'counts', outputColumn = 'totalTags')
+  ZebCTSSs <- calcTPM(ZebCTSSs, inputAssay="counts", outputAssay="TPM", 
+                      outputColumn="subsetTags")
+  ZebCTSSs <- calcPooled(ZebCTSSs, inputAssay="TPM")
+  BCs <- clusterBidirectionally(ZebCTSSs, balanceThreshold=0.8)
+  BCs <- trim(BCs)
+  
+  return(BCs)
+}
+pgc.enhancers <- BidirectionalPromoters(names1[3])
+
+TxDb.danRer7.ENSEMBL <- makeTxDbFromBiomart(biomart = 'ENSEMBL_MART_ENSEMBL',
+                                            dataset='drerio_gene_ensembl', # dmelanogaster_gene_ensembl # mmusculus_gene_ensembl
+                                            host = 'http://mar2015.archive.ensembl.org') # http://jan2019.archive.ensembl.org
+
+txdb7 <- toGRanges(TxDb.danRer7.ENSEMBL)
+txdb7$ENSEMBL <- names(txdb7) ## for assigning ENSEMBL IDs
+## changes seqlevels from 1,2,3... to chr1, chr2, chr3...
+chr <- c(1:25)
+chr1 <- paste0
+txdb7 <- keepSeqlevels(txdb7, chr,pruning.mode = 'coarse')
+seqlevelsStyle(txdb7) <- 'UCSC'
+
+annotate.bidirectional.proms<- function(x){
+  BCs <- annotatePeak(x, tssRegion = c(-500, 500), TxDb = txdb7,
+                    sameStrand = T, verbose = F)
+
+  return(BCs@anno)
+}
+
+anno.pgc.enhancers <- annotate.bidirectional.proms(pgc.enhancers)
+subset(anno.pgc.enhancers, anno.pgc.enhancers$distanceToTSS > 100) -> putative.pgc.enhancers
+saveRDS(putative.pgc.enhancers, '~/Desktop/Postdoc/Data_Analysis/CAGEsets/PGC/PutativePGCprim5EnhancersBasedOnCAGEfighterScore08.rds')
+end.rcode-->
+
+<h2> Figure 5 </h2>
+<p> <b> Integration of CAGE and ATAC analysis </b> </p>
+<p>Here we use open chromatin profiles for studying promoter features.</p>
+<p>ATAc bam files are imported in R and adjusted for Tn5 overhang.</p>
+<p>Tn5 cut sites are then retrieved by resizing to 1.</p>
+<p>The ATAC signal at the promoters is the obtained by creating a score matrix though the genomation package. The scores in different samples are scaled and plotted as average metaplot. </p>
+
+<!--begin.rcode eval = FALSE
+library(GenomicAlignments)
+library(ATACseqQC)
+
+### run some quality checks
+setwd('~/Desktop/Postdoc/Data_Analysis/ATACseq/')
+atac.file <- readGAlignments('ATAC.PGC_24hpf_Tdrd7_MO5mismatch.rep2.Fabio.2018-05.danRer7.sorted.goodChr.bam')
+## load transcipt file
+txs <- loadDb('../annotation/txdb_DanRer7.sqlite')
+blacklist <- read.csv('../danRer10_blacklist.bed', sep = '\t', header = F)
+blacklist <- GRanges(seqnames = blacklist$V1, IRanges(start = blacklist$V2, end = blacklist$V3))
+
+## extend to include tn5 overhang
+atacR = granges(atac.file, use.names=T, use.mcols=F)
+cut0 = GRanges(seqnames(atacR), IRanges(start(atacR)+5, start(atacR)+5), strand(atacR))
+cut1 = GRanges(seqnames(atacR), IRanges(end(atacR)-4, end(atacR)-4), strand(atacR))
+a.pgc = GRanges(seqnames(atacR), IRanges(start(cut0), end(cut1)), strand(atacR)) 
+
+cov.function <- function(a, resize = 1, atacR = F){
+  #a <- subset(a, width(a) < 120)
+  seqlevels(a) = seqlevels(BSgenome.Drerio.UCSC.danRer7)
+  seqinfo(a)   = seqinfo(BSgenome.Drerio.UCSC.danRer7)
+  a = trim(a)
+  ## remove blacklisted regions
+  a <- subsetByOverlaps(a, blacklist, invert = T)
+  a <- resize(a, width = resize, fix = "start", ignore.strand = FALSE)
+
+  a_plus <- a[strand(a) == '+']
+  a_minus <- a[strand(a) == '-']
+  ## Tn5 cut sites: resize = 1
+
+  genome.size <- 1.42e9
+  expected.cov <- sum(width(atacR))/genome.size
+  ## select only nucleosomes
+  FoldChange.minus <- GRanges(coverage(a_minus) / expected.cov, strand = '-')
+  FoldChange.plus <- GRanges(coverage(a_plus) / expected.cov, strand = '+')
+  FoldChange.strand <- c(FoldChange.minus, FoldChange.plus)
+  
+  #export.bed(FoldChange, paste0(x, '.bed'))
+  return(FoldChange.strand)
+}
+atac.fold.change.pgc <- cov.function(a.pgc, resize = 1, atacR = atacR.pgc)
+atac.fold.change.soma <- cov.function(a.soma, resize = 1, atacR = atacR.soma)
+
+export.bw(FoldChange.strand, 'ATACcoverageFoldChangePCGprim5.bw')
+### import PGC promoters
+setwd('~/Desktop/Postdoc/Data_Analysis/CAGEsets/')
+cageset.promoters <- readRDS('CAGEset_PGC_soma_Early_Late.rds')
+
+## extract pgc or somatic promoters
+.promoter.width <- function(x, width = 1500){
+  pgc.promoters <- tagClusters(cageset.promoters, sample = x, returnInterquantileWidth = TRUE, qLow = 0.1, qUp = 0.9)
+
+  pgc.promoters.range <- GRanges(seqnames = pgc.promoters$chr, IRanges(start = pgc.promoters$dominant_ctss, end = pgc.promoters$dominant_ctss), strand = pgc.promoters$strand)
+  pgc.promoters.range <- resize(pgc.promoters.range, width, fix = 'center')
+  return(pgc.promoters.range)
+}
+pgc.promoters.range.50 <- .promoter.width("PGC_prim5_r4_1_S5", 50)
+soma.promoters.range.50 <- .promoter.width("soma_prim5_r4_1_S6", 50)
+
+### genomation
+library(genomation)
+
+sm <- ScoreMatrix(target = atac.fold.change.pgc, windows = pgc.promoters.range.1500, weight.col = 'score', strand.aware = T)
+plotMeta(sm, xcoords = c(-750,750), winsorize = 0.99)
+## plot scorematrixlist from bigwigs
+bw.list <- list.files(pattern = '\\.bw')
+sml <- ScoreMatrixList(targets = bw.list, windows = pgc.promoters.range, weight.col = 'score', strand.aware = T)
+
+library(dplyr)
+### ggplot meta
+df <- data.frame(cbind(colMeans(sm.sharp), colMeans(sm.broad)))
+colnames(df) <- c("sharp", "broad")
+
+library(scales)
+## rescale average signal for plot
+df.sharp.scale <- rescale(df$sharp, 0:1)
+df.broad.scale <- rescale(df$broad, 0:1)
+df$sharp <- df.sharp.scale
+df$broad <- df.broad.scale
+
+df.gg <- df %>% gather(Expression, Tn5CutSites, sharp:broad)
+df.gg$Index <- rep(c(-50:-1, 1:50), 2)
+
+ggplot(df.gg, aes(x=Index, y=Tn5CutSites, Group=factor(Expression))) +
+           geom_line(aes(colour=factor(Expression))) +
+           scale_colour_manual(values = c("blue", "#F8766D")) + ###7CAE00 ###F8766D +
+           geom_vline(xintercept=0, colour="grey", linetype="longdash") +
+           theme_classic()
+
+
+########################
+
+## plot chromatin accessibility for promoters binned by rnaseq logFC
+deseq.pgc.soma.binned <- deseq.res.gr %>% data.frame %>%
+    mutate(bin = cut(log2FoldChange, quantile(log2FoldChange, probs=seq(0,1,0.1), na.rm=TRUE))) %>% ungroup()
+
+#         0%        10%        20%        30%        40%        50%        60%        70%     80% 
+#-11.068457  -3.849525  -2.445968  -1.707124  -1.163816   1.049257   1.683160   2.369300  3.545422
+#       90%       100% 
+#  6.072580  23.040560
+
+## extract coordinates of promoters with a WWWWW pentamer
+library(tidyr)
+extract_coordinates_keep_ids <- function(x){
+  penties.all.occurrencies <- subset(x, x$motif_value > 0)
+penties.all.occurrencies <- penties.all.occurrencies %>%
+  mutate(ccID = cc_id) %>%
+  mutate(cc_id = gsub("\\_", " ", penties.all.occurrencies$cc_id))
+
+  penties.all.occurrencies.plus <- penties.all.occurrencies[grep('+', penties.all.occurrencies$cc_id, fixed = TRUE),] %>% separate(cc_id, c('chr', 'start', 'end', 'tpm', 'b'))
+  penties.all.occurrencies.plus$strand = '+'
+
+  penties.all.occurrencies.minus <- penties.all.occurrencies[grep('-', penties.all.occurrencies$cc_id, fixed = TRUE),] %>% separate(cc_id, c('chr', 'start', 'end', 'tpm', 'b'))
+  penties.all.occurrencies.minus$strand = '-'
+
+  ## rebind
+  penties.all.occurrencies1 <- rbind(penties.all.occurrencies.minus, penties.all.occurrencies.plus)
+  return(penties.all.occurrencies1)
+}
+## run function
+penties.all.occurrencies_ids <- extract_coordinates_keep_ids(penties)
+
+## subset zygotic promoters with a match for the motif scan
+penties.binned <- merge(penties.all.occurrencies_ids, deseq.pgc.soma.binned, by.x = 'ccID', by.y = 'cc_id')
+penties.binned$start.x <- as.numeric(penties.binned$start.x)
+penties.binned$end.x <- as.numeric(penties.binned$end.x)
+colnames(penties.binned)[5] <- 'start'
+colnames(penties.binned)[6] <- 'end'
+colnames(penties.binned)[11] <- 'strand'
+
+### subset the pentamers bins
+pent.TATAA.somatic.bin <- subset(penties.binned, penties.binned$sampleID == 'soma_prim5_r4_1_S6')
+pent.TATAA.somatic.bin <- subset(pent.TATAA.somatic.bin, pent.TATAA.somatic.bin$motif == 'TATAA' | pent.TATAA.somatic.bin$motif == 'ATATA' | pent.TATAA.somatic.bin$motif == 'ATAAA' | pent.TATAA.somatic.bin$motif == 'TAAAA')
+pent.TATAA.somatic.bin <- subset(pent.TATAA.somatic.bin, pent.TATAA.somatic.bin$bin == '(3.55,6.07]' | pent.TATAA.somatic.bin$bin == '(6.07,23]')
+
+## subset PGC promoters with a match for the motif scan
+pent.TATAA.pgc.bin <- subset(penties.binned, penties.binned$sampleID == 'PGC_prim5_r4_1_S5')
+pent.TATAA.pgc.bin <- subset(pent.TATAA.pgc.bin, pent.TATAA.pgc.bin$motif == 'TTTTA' | pent.TATAA.pgc.bin$motif == 'ATTTT' | pent.TATAA.pgc.bin$motif == 'TTATT' | pent.TATAA.pgc.bin$motif == 'TTTAT')
+pent.TATAA.pgc.bin <- subset(pent.TATAA.pgc.bin, pent.TATAA.pgc.bin$bin == '(-3.85,-2.45]' | pent.TATAA.pgc.bin$bin == '(-11.1,-3.85]')
+
+
+## subset with tcs_res for the IQ widths and merge into a list
+## extract Interquartile width and select for sample-specific promoters
+pent.TATAA.pgc.bin.range <- GRanges(seqnames = pent.TATAA.pgc.bin$chr, IRanges(start = pent.TATAA.pgc.bin$start, end = pent.TATAA.pgc.bin$end), strand = pent.TATAA.pgc.bin$strand)
+values(pent.TATAA.pgc.bin.range) <- pent.TATAA.pgc.bin[,c(1:3,7:10,17:24)]
+
+tcs_res_resize.pgc.bin <- subsetByOverlaps(tcs_res[[1]], pent.TATAA.pgc.bin.range)
+
+
+pent.TATAA.somatic.bin.range <- GRanges(seqnames = pent.TATAA.somatic.bin$chr, IRanges(start = pent.TATAA.somatic.bin$start, end = pent.TATAA.somatic.bin$end), strand = pent.TATAA.somatic.bin$strand)
+values(pent.TATAA.somatic.bin.range) <- pent.TATAA.somatic.bin[,c(1:3,7:10,17:24)]
+tcs_res_resize.soma.bin <- subsetByOverlaps(tcs_res[[2]], pent.TATAA.somatic.bin.range)
+
+list_pent_extract.bin <- list(tcs_res_resize.pgc.bin, tcs_res_resize.soma.bin)
+saveRDS(list_pent_extract.bin, '~/Desktop/Postdoc/Data_Analysis/Tables/PGC_CAGE/WWpromUpreg_PGCandSomaBinned.rds')
+
+
+### plot heatmaps for TA and CG in promoter subsets
+resize_prom <- function(x){
+  x <- data.frame(x)
+  y <- GRanges(seqnames = x$seqnames, IRanges(start = x$dominant_ctss, end = x$dominant_ctss), strand = x$strand)
+  values(y) <- x[,6:ncol(x)]
+
+  resize.tc <- resize(y, 110, fix = 'center')
+  resize.tc <- resize.tc[order(resize.tc$interquantile_width),]
+  return(resize.tc)
+}
+tcs_res_resize.bin <- lapply(list_pent_extract.bin, resize_prom)
+names(tcs_res_resize.bin) <- names(tcs_res)
+
+## score matrix
+sm.pgc.top.up <- ScoreMatrix(target = atac.fold.change.pgc, windows = tcs_res_resize.bin[[1]], weight.col = 'score', strand.aware = T)
+sm.pgc.top.up.soma.genes <- ScoreMatrix(target = atac.fold.change.pgc, windows = tcs_res_resize.bin[[2]], weight.col = 'score', strand.aware = T)
+sm.soma.top.up <- ScoreMatrix(target = atac.fold.change.soma, windows = tcs_res_resize.bin[[2]], weight.col = 'score', strand.aware = T)
+sm.soma.top.up.pgc.genes <- ScoreMatrix(target = atac.fold.change.soma, windows = tcs_res_resize.bin[[1]], weight.col = 'score', strand.aware = T)
+## plot atac score
+df <- data.frame(cbind(colMeans(sm.pgc.top.up), colMeans(sm.pgc.top.up.soma.genes)))
+colnames(df) <- c("PGC", "Soma")
+
+## rescale average signal for plot
+df.PGC.scale <- rescale(df$PGC, 0:1)
+df.soma.scale <- rescale(df$Soma, 0:1)
+df$PGC <- df.PGC.scale
+df$Soma <- df.soma.scale
+
+df.gg <- df %>% gather(Expression, Tn5CutSites, PGC:Soma)
+df.gg$Index <- rep(c(-55:-1, 1:55), 2)
+
+p <- ggplot(df.gg, aes(x=Index, y=Tn5CutSites, Group=factor(Expression))) +
+           geom_line(aes(colour=factor(Expression))) +
+           scale_colour_manual(values = c("purple", "orchid")) + ###7CAE00 ###F8766D +
+           geom_vline(xintercept=0, colour="grey", linetype="longdash") +
+           theme_classic() + theme(legend.position = "none")
+## plot smoothed adjusted linear model
+p + geom_smooth(method = "lm", formula =  y ~ poly(x, 20), se = F)
+end.rcode-->
+
+<p> <b> ATAC analysis using ATACseqQC package</b> </p>
+<p>ATACseqQC is an R package for analysis of chromatin features.</p>
+<p>It allows discovery of TF binding sites by footprint analysis of open chromatin</p>
+
+<!--begin.rcode eval = FALSE
+library(ChIPpeakAnno)
+outPath.PGC <- 'splited/PGCprimRep1'
+outPath.Soma <- 'splited/SomaPrimRep1'
+bamfiles.PGC <- file.path(outPath.PGC,
+                     c("NucleosomeFree.bam",
+                     "mononucleosome.bam", "dinucleosome.bam", "trinucleosome.bam"))
+bamfiles.Soma <- file.path(outPath.Soma,
+                     c("NucleosomeFree.bam",
+                     "mononucleosome.bam", "dinucleosome.bam", "trinucleosome.bam"))
+TSS <- promoters(txdb7, upstream=0, downstream=1)
+TSS <- unique(TSS)
+
+sigs <- enrichedFragments(bamfiles = bamfiles.PGC, 
+                          TSS=prom.x,
+                          librarySize=librarySize,
+                          seqlev=seqlev,
+                          TSS.filter=0.5,
+                          n.tile = NTILE,
+                          upstream = ups,
+                          downstream = dws)
+sigs.log2 <- lapply(sigs, function(.ele) log2(.ele+1))
+#plot heatmap
+featureAlignedHeatmap(sigs.log2, reCenterPeaks(TSS, width=ups+dws),
+                      zeroAt=.5, n.tile=NTILE)
+
+out <- featureAlignedDistribution(sigs, 
+                                  reCenterPeaks(TSS, width=ups+dws),
+                                  zeroAt=.5, n.tile=NTILE, type="l", 
+                                  ylab="Averaged coverage")
+```
+
+```{r}
+
+## find motif binding
+library(MotifDb)
+TBP2 <- query(MotifDb, c("TBP"))
+TBP2 <- as.list(TBP2)
+
+CTCF <- query(MotifDb, c("CTCF"))
+CTCF <- as.list(CTCF)
+
+NANOG <- query(MotifDb, c("NANOG"))
+NANOG <- as.list(NANOG)
+
+shiftedBamfile <- 'ATAC.PGC_24hpf_Tdrd7_MO5mismatch.rep2.Fabio.2018-05.danRer7.sorted.goodChr.bam'
+shiftedBamfile.soma <- 'ATAC.somatic_24hpf_Tdrd7_MO.rep1.Fabio.2018-05.danRer7.sorted.goodChr.bam'
+seqlev <- paste0('chr', 1:25)
+
+sigs.PGC.TBP2 <- factorFootprints(shiftedBamfile, pfm=TBP2[[3]], 
+                         genome=BSgenome.Drerio.UCSC.danRer7,
+                         min.score="90%", seqlev=seqlev,
+                         upstream=100, downstream=100)
+
+sigs.soma.TBP2 <- factorFootprints(shiftedBamfile.soma, pfm=TBP2[[3]], 
+                                  genome=BSgenome.Drerio.UCSC.danRer7,
+                                  min.score="90%", seqlev=seqlev,
+                                  upstream=100, downstream=100)
+## v plot
+vp <- vPlot(shiftedBamfile, pfm=TBP2[[3]], 
+            genome=BSgenome.Drerio.UCSC.danRer7, min.score="90%", seqlev=seqlev,
+            upstream=200, downstream=200, 
+            ylim=c(30, 250), bandwidth=c(2, 1))
+distanceDyad(vp, pch=20, cex=.05)
+end.rcode-->
+</body>
+</html>
+
